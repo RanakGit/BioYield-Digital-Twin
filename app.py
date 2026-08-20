@@ -6,6 +6,75 @@ import pandas as pd
 import plotly.graph_objects as go
 from scipy.integrate import odeint
 import streamlit as st
+from supabase import create_client, Client
+
+# Initialize Supabase Client
+@st.cache_resource
+def init_supabase() -> Client:
+    url = st.secrets["supabase"]["SUPABASE_URL"]
+    key = st.secrets["supabase"]["SUPABASE_KEY"]
+    return create_client(url, key)
+
+supabase = init_supabase()
+
+# Initialize session state for auth
+if "user" not in st.session_state:
+    st.session_state.user = None
+
+# ---------------------------------------------------------
+# AUTHENTICATION SCREEN (Shown if user is not logged in)
+# ---------------------------------------------------------
+def render_auth_ui():
+    st.markdown("<h2 style='text-align: center;'>🧪 BioYield-Predict</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #8E8EA0;'>Sign in to access your digital twin workstation</p>", unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown('<div class="chat-card">', unsafe_allow_html=True)
+        
+        auth_mode = st.radio("Choose Mode", ["Login", "Sign Up"], horizontal=True, label_visibility="collapsed")
+        
+        email = st.text_input("Email Address", placeholder="name@company.com")
+        password = st.text_input("Password", type="password", placeholder="••••••••")
+        
+        if auth_mode == "Login":
+            if st.button("Sign In with Email", use_container_width=True):
+                try:
+                    res = supabase.auth.sign_in_with_password({"email": email, "password": password})
+                    st.session_state.user = res.user
+                    st.success("Signed in successfully!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Login failed: {e}")
+        else:
+            if st.button("Create Account", use_container_width=True):
+                try:
+                    res = supabase.auth.sign_up({"email": email, "password": password})
+                    st.success("Account created! Please check your email to confirm.")
+                except Exception as e:
+                    st.error(f"Sign up failed: {e}")
+                    
+        st.divider()
+        
+        # Google OAuth Button
+        if st.button("🌐 Continue with Google", use_container_width=True):
+            try:
+                res = supabase.auth.sign_in_with_oauth({"provider": "google"})
+                st.info(f"Redirecting to Google authentication...")
+            except Exception as e:
+                st.error(f"OAuth error: {e}")
+                
+        st.markdown('</div>', unsafe_allow_html=True)
+
+# ---------------------------------------------------------
+# MAIN APP GATEWAY
+# ---------------------------------------------------------
+if st.session_state.user is None:
+    render_auth_ui()
+    st.stop()  # Stops execution here so unauthenticated users can't see the app below
+
+# --- REST OF YOUR APP.PY CODE RUNS HERE FOR LOGGED-IN USERS ONLY ---
 
 
 # Set page configuration
