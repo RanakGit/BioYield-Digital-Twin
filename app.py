@@ -6,6 +6,10 @@ import pandas as pd
 import plotly.graph_objects as go
 from scipy.integrate import odeint
 import streamlit as st
+# Sanitize and bound inputs defensively
+initial_S0 = float(np.clip(initial_S0, 10.0, 60.0))
+initial_X0 = float(np.clip(initial_X0, 0.05, 1.0))
+min_pH = float(np.clip(min_pH, 4.0, 7.5))
 
 # Set page configuration
 st.set_page_config(
