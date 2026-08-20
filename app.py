@@ -35,7 +35,7 @@ except Exception as e:
 
 
 # ---------------------------------------------------------
-# 2. Monod Kinetic ODE Function
+# 2. Monod Kinetic ODE Function & Caching Layer
 # ---------------------------------------------------------
 def fermentation_ode(y, t, mu_max, Ks, Y_xs, Y_px):
     X, S, P = y
@@ -45,6 +45,15 @@ def fermentation_ode(y, t, mu_max, Ks, Y_xs, Y_px):
     dPdt = Y_px * dXdt if S > 0 else 0
     return [dXdt, dSdt, dPdt]
 
+
+# Cache ODE integration outputs (up to 100 parameter combinations for 1 hour)
+@st.cache_data(max_entries=100, ttl=3600)
+def run_cached_ode(X0, S0, Y_px, mu_max, Ks, Y_xs):
+    t = np.linspace(0, 24, 100)
+    solution = odeint(
+        fermentation_ode, [X0, S0, 0], t, args=(mu_max, Ks, Y_xs, Y_px)
+    )
+    return t, solution
 
 
 # ---------------------------------------------------------
