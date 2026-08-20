@@ -8,18 +8,26 @@ from scipy.integrate import odeint
 import streamlit as st
 from supabase import create_client, Client
 
+# Set page configuration FIRST
+st.set_page_config(
+    page_title="BioYield-Predict | Bioprocess Digital Twin",
+    page_icon="🧪",
+    layout="wide",
+)
+
 # Initialize Supabase Client
 @st.cache_resource
 def init_supabase() -> Client:
+    if "supabase" not in st.secrets:
+        st.error("Missing [supabase] section in Streamlit Secrets!")
+        st.stop()
     url = st.secrets["supabase"]["SUPABASE_URL"]
     key = st.secrets["supabase"]["SUPABASE_KEY"]
     return create_client(url, key)
 
 supabase = init_supabase()
 
-def save_simulation_run(
-    user_id, initial_S0, initial_X0, min_pH, predicted_yield
-):
+def save_simulation_run(user_id, initial_S0, initial_X0, min_pH, predicted_yield):
     try:
         data = {
             "user_id": user_id,
@@ -73,32 +81,19 @@ def render_auth_ui():
                     
         st.divider()
         
-        # Google OAuth Button
         if st.button("🌐 Continue with Google", use_container_width=True):
             try:
                 res = supabase.auth.sign_in_with_oauth({"provider": "google"})
-                st.info(f"Redirecting to Google authentication...")
+                st.info("Redirecting to Google authentication...")
             except Exception as e:
                 st.error(f"OAuth error: {e}")
                 
         st.markdown('</div>', unsafe_allow_html=True)
 
-# ---------------------------------------------------------
-# MAIN APP GATEWAY
-# ---------------------------------------------------------
+# Main Gate
 if st.session_state.user is None:
     render_auth_ui()
-    st.stop()  # Stops execution here so unauthenticated users can't see the app below
-
-# --- REST OF YOUR APP.PY CODE RUNS HERE FOR LOGGED-IN USERS ONLY ---
-
-
-# Set page configuration
-st.set_page_config(
-    page_title="BioYield-Predict | Bioprocess Digital Twin",
-    page_icon="🧪",
-    layout="wide",
-)
+    st.stop()
 
 # ---------------------------------------------------------
 # ChatGPT Dark Theme Custom CSS
@@ -106,101 +101,32 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    /* Global Backgrounds */
-    .stApp {
-        background-color: #202123;
-        color: #ECECF1;
-        font-family: 'Söhne', 'Segoe UI', Roboto, sans-serif;
-    }
-    
-    /* Sidebar Styling */
-    section[data-testid="stSidebar"] {
-        background-color: #343541 !important;
-        border-right: 1px solid #4d4d4f;
-    }
-    section[data-testid="stSidebar"] * {
-        color: #ECECF1 !important;
-    }
-    
-    /* Metric Cards (ChatGPT Container Style) */
-    div[data-testid="stMetric"] {
-        background-color: #2A2B32;
-        border: 1px solid #3E3F4B;
-        padding: 16px 20px;
-        border-radius: 8px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-    }
-    div[data-testid="stMetricLabel"] p {
-        color: #8E8EA0 !important;
-        font-size: 0.85rem !important;
-        font-weight: 500;
-    }
-    div[data-testid="stMetricValue"] div {
-        color: #10A37F !important; /* ChatGPT Accent Green */
-        font-weight: 600;
-    }
-    
-    /* Tabs Styling */
-    button[data-baseweb="tab"] {
-        background-color: transparent !important;
-        color: #8E8EA0 !important;
-        border-bottom: 2px solid transparent !important;
-        font-size: 0.95rem;
-        padding: 10px 16px;
-    }
-    button[aria-selected="true"] {
-        color: #ECECF1 !important;
-        border-bottom: 2px solid #10A37F !important;
-        font-weight: 600;
-    }
-    
-    /* Headers & Text */
-    h1, h2, h3 {
-        color: #ECECF1 !important;
-        font-weight: 600;
-        letter-spacing: -0.02em;
-    }
-    .stCaption {
-        color: #8E8EA0 !important;
-    }
-    
-    /* Custom Prompt / Callout Boxes */
-    .chat-card {
-        background-color: #343541;
-        border: 1px solid #4d4d4f;
-        border-radius: 8px;
-        padding: 16px 20px;
-        margin-bottom: 20px;
-    }
-    
-    /* Buttons (ChatGPT Accent Button) */
-    .stDownloadButton > button {
-        background-color: #10A37F !important;
-        color: #FFFFFF !important;
-        border: none !important;
-        border-radius: 6px !important;
-        padding: 8px 16px !important;
-        font-weight: 500 !important;
-        transition: background-color 0.2s ease;
-    }
-    .stDownloadButton > button:hover {
-        background-color: #1A7F64 !important;
-    }
+    .stApp { background-color: #202123; color: #ECECF1; font-family: 'Söhne', 'Segoe UI', Roboto, sans-serif; }
+    section[data-testid="stSidebar"] { background-color: #343541 !important; border-right: 1px solid #4d4d4f; }
+    section[data-testid="stSidebar"] * { color: #ECECF1 !important; }
+    div[data-testid="stMetric"] { background-color: #2A2B32; border: 1px solid #3E3F4B; padding: 16px 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2); }
+    div[data-testid="stMetricLabel"] p { color: #8E8EA0 !important; font-size: 0.85rem !important; font-weight: 500; }
+    div[data-testid="stMetricValue"] div { color: #10A37F !important; font-weight: 600; }
+    button[data-baseweb="tab"] { background-color: transparent !important; color: #8E8EA0 !important; border-bottom: 2px solid transparent !important; font-size: 0.95rem; padding: 10px 16px; }
+    button[aria-selected="true"] { color: #ECECF1 !important; border-bottom: 2px solid #10A37F !important; font-weight: 600; }
+    h1, h2, h3 { color: #ECECF1 !important; font-weight: 600; letter-spacing: -0.02em; }
+    .stCaption { color: #8E8EA0 !important; }
+    .chat-card { background-color: #343541; border: 1px solid #4d4d4f; border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; }
+    .stDownloadButton > button { background-color: #10A37F !important; color: #FFFFFF !important; border: none !important; border-radius: 6px !important; padding: 8px 16px !important; font-weight: 500 !important; transition: background-color 0.2s ease; }
+    .stDownloadButton > button:hover { background-color: #1A7F64 !important; }
     </style>
 """,
     unsafe_allow_html=True,
 )
 
-
 # ---------------------------------------------------------
-# 1. Model & Data Loaders (CACHED FOR MULTI-USER PERFORMANCE)
+# 1. Model Loaders
 # ---------------------------------------------------------
 @st.cache_resource
 def load_assets():
     model = joblib.load("fermentation_model.pkl")
     features = joblib.load("model_features.pkl")
     return model, features
-
 
 try:
     model, feature_names = load_assets()
@@ -209,7 +135,6 @@ except Exception as e:
     st.sidebar.error(f"Error loading model files: {e}")
     st.stop()
 
-
 # ---------------------------------------------------------
 # 2. Monod Kinetic ODE Function & Caching Layer
 # ---------------------------------------------------------
@@ -217,153 +142,121 @@ def fermentation_ode(y, t, mu_max, Ks, Y_xs, Y_px):
     X, S, P = y
     mu = mu_max * (S / (Ks + S)) if S > 0 else 0
     dXdt = mu * X
-    dSdt = -(1 / Y_xs) * dXdt if S > 0 else 0
+    dSdt = -(1 / Y_xs) * dXdt if (S > 0 and Y_xs > 0) else 0
     dPdt = Y_px * dXdt if S > 0 else 0
     return [dXdt, dSdt, dPdt]
 
-
-# Cache ODE integration outputs (up to 100 parameter combinations for 1 hour)
 @st.cache_data(max_entries=100, ttl=3600)
-def run_cached_ode(X0, S0, Y_px, mu_max, Ks, Y_xs):
-    t = np.linspace(0, 24, 100)
+def run_cached_ode(X0, S0, Y_px, mu_max, Ks, Y_xs, hours):
+    t = np.linspace(0, hours, 100)
     solution = odeint(
         fermentation_ode, [X0, S0, 0], t, args=(mu_max, Ks, Y_xs, Y_px)
     )
     return t, solution
 
-
 # ---------------------------------------------------------
-# 3. Sidebar Inputs with Reset Button
+# 3. Sidebar Inputs
 # ---------------------------------------------------------
 st.sidebar.header("⚙️ Bioreactor Input Parameters")
 
-# Define default values in a dictionary
-DEFAULTS = {
-    "S0": 35.0,
-    "X0": 0.25,
-    "delta_X": 8.0,
-    "min_pH": 5.5,
-    "do_stress": 5.0,
-    "Y_px": 0.20,
-}
-
-
-# Callback function to clear slider state back to defaults
-def reset_to_defaults():
-    for key, value in DEFAULTS.items():
-        st.session_state[key] = value
-
-
-# Initial Substrate Concentration S0 (g/L)
 initial_S0 = st.sidebar.number_input(
     label="Initial Substrate S₀ (g/L)",
-    min_value=0.0,
-    max_value=500.0,
-    value=20.0,  # Default value
+    min_value=10.0,
+    max_value=60.0,
+    value=35.0,
     step=0.5,
     format="%.2f",
     help="Enter starting substrate concentration in g/L",
 )
 
-# Initial Biomass Concentration X0 (g/L)
 initial_X0 = st.sidebar.number_input(
     label="Initial Biomass X₀ (g/L)",
-    min_value=0.0,
-    max_value=50.0,
-    value=0.5,  # Default value
-    step=0.1,
+    min_value=0.05,
+    max_value=1.0,
+    value=0.25,
+    step=0.05,
     format="%.2f",
     help="Enter starting biomass concentration in g/L",
 )
 
-# Minimum pH
 min_pH = st.sidebar.number_input(
     label="Minimum pH",
-    min_value=2.0,
-    max_value=12.0,
-    value=6.8,  # Default value
+    min_value=4.0,
+    max_value=7.5,
+    value=5.5,
     step=0.1,
     format="%.2f",
     help="Set the minimum target pH for the culture run",
 )
 
-# Simulation Duration (Hours)
 sim_time = st.sidebar.number_input(
     label="Simulation Time (Hours)",
     min_value=1,
     max_value=120,
-    value=48,  # Default value
+    value=24,
     step=1,
     help="Total duration of the batch run in hours",
 )
 
-# ---------------------------------------------------------
-# 4. Feature Calculations & Prediction
-# ---------------------------------------------------------
-# Add input bounds sanitization right here!
-delta_X = 0.0
-initial_S0 = float(np.clip(initial_S0, 10.0, 60.0))
-initial_X0 = float(np.clip(initial_X0, 0.05, 1.0))
-delta_X = float(np.clip(delta_X, 1.0, 20.0))
-min_pH = float(np.clip(min_pH, 4.0, 7.5))
-do_stress_hours = float(np.clip(do_stress_hours, 0.0, 15.0))
-Y_px_kinetic = float(np.clip(Y_px_kinetic, 0.05, 0.5))
-# ---------------------------------------------------------
-# Dissolved Oxygen (DO) & Stress Analysis
-# ---------------------------------------------------------
-# Example: If do_vals is your array of DO values over time array t_span
-CRITICAL_DO_THRESHOLD = 20.0  # % saturation
+st.sidebar.subheader("🧫 Kinetic Parameters")
+Y_px_kinetic = st.sidebar.number_input("Product Yield (Y_px)", 0.05, 0.50, 0.20, step=0.01)
+mu_max = st.sidebar.number_input("Max Growth Rate (μ_max)", 0.1, 1.0, 0.4, step=0.05)
+Ks = st.sidebar.number_input("Half-Sat Constant (Ks)", 0.1, 5.0, 0.5, step=0.1)
+Y_xs = st.sidebar.number_input("Biomass Yield (Y_xs)", 0.1, 0.9, 0.5, step=0.05)
 
-# Calculate time spent under critical DO threshold
-# (Assumes uniform time step dt in t_span)
-if 'do_vals' in locals() and 't_span' in locals() and len(t_span) > 1:
-    dt = t_span[1] - t_span[0]
-    do_stress_hours = float(np.sum(do_vals < CRITICAL_DO_THRESHOLD) * dt)
-else:
-    # Default fallback if DO tracking isn't active
-    do_stress_hours = 0.0
+# ---------------------------------------------------------
+# 4. Feature Calculations & Prediction Pipeline
+# ---------------------------------------------------------
+# 1. Run ODE integration first
+t_span, ode_solution = run_cached_ode(
+    initial_X0, initial_S0, Y_px_kinetic, mu_max, Ks, Y_xs, sim_time
+)
 
-# Derived features & model prediction using the sanitized inputs
-s0_x0_ratio = initial_S0 / initial_X0 if initial_X0 > 0 else 0
+x_vals = ode_solution[:, 0]
+s_vals = ode_solution[:, 1]
+p_vals = ode_solution[:, 2]
 
+# 2. Derive biomass, substrate, and stress parameters
+x_final = x_vals[-1]
+s_final = s_vals[-1]
+
+delta_X = float(x_final - initial_X0)
+delta_S = float(initial_S0 - s_final)
+
+# Simulated DO Profile and DO Stress Calculation
+do_vals = 100 - (x_vals * 8.0)  # Simplified DO depletion curve
+CRITICAL_DO_THRESHOLD = 20.0
+dt = t_span[1] - t_span[0] if len(t_span) > 1 else 1.0
+do_stress_hours = float(np.sum(do_vals < CRITICAL_DO_THRESHOLD) * dt)
+
+# 3. Input Sanitization/Clipping for ML Model Bounds
+initial_S0_clipped = float(np.clip(initial_S0, 10.0, 60.0))
+initial_X0_clipped = float(np.clip(initial_X0, 0.05, 1.0))
+delta_X_clipped = float(np.clip(delta_X, 1.0, 20.0))
+min_pH_clipped = float(np.clip(min_pH, 4.0, 7.5))
+do_stress_hours_clipped = float(np.clip(do_stress_hours, 0.0, 15.0))
+Y_px_kinetic_clipped = float(np.clip(Y_px_kinetic, 0.05, 0.5))
+
+s0_x0_ratio = initial_S0_clipped / initial_X0_clipped if initial_X0_clipped > 0 else 0.0
+
+# 4. Model Prediction
 input_data = pd.DataFrame(
     [[
-        initial_S0,
-        initial_X0,
+        initial_S0_clipped,
+        initial_X0_clipped,
         s0_x0_ratio,
-        delta_X,
-        min_pH,
-        do_stress_hours,
-        Y_px_kinetic,
+        delta_X_clipped,
+        min_pH_clipped,
+        do_stress_hours_clipped,
+        Y_px_kinetic_clipped,
     ]],
     columns=feature_names,
 )
 
-predicted_yield = model.predict(input_data)[0]
+predicted_yield = float(model.predict(input_data)[0])
 substrate_efficiency = (
-    (predicted_yield / initial_S0) * 100 if initial_S0 > 0 else 0
+    (predicted_yield / initial_S0_clipped) * 100 if initial_S0_clipped > 0 else 0.0
 )
-
-solution = odeint(monod_model, [initial_X0, initial_S0], t_span)
-x_vals = solution[:, 0]  # Biomass concentration over time
-s_vals = solution[:, 1]  # Substrate concentration over time
-
-# 1. Calculate delta_X first
-x_final = x_vals[-1]  # Final biomass concentration from ODE solution
-delta_X = x_final - initial_X0
-
-# 2. Now clip delta_X safely (Line 306)
-delta_X = float(np.clip(delta_X, 1.0, 20.0))
-
-# 2. Extract final values & calculate deltas
-x_final = x_vals[-1]  # Final biomass concentration
-s_final = s_vals[-1]  # Final substrate concentration
-
-delta_X = x_final - initial_X0  # Total biomass produced (g/L)
-delta_S = initial_S0 - s_final  # Total substrate consumed (g/L)
-
-# Biomass yield Y_xs (g/g)
-predicted_yield = delta_X / delta_S if delta_S > 0 else 0.0
 
 # ---------------------------------------------------------
 # 5. UI Layout - Title & Key Metrics
@@ -376,9 +269,8 @@ st.markdown(
 col1, col2, col3 = st.columns(3)
 col1.metric("Biomass Produced (ΔX)", f"{delta_X:.2f} g/L")
 col2.metric("Substrate Consumed (ΔS)", f"{delta_S:.2f} g/L")
-col3.metric("Predicted Yield (Y_xs)", f"{predicted_yield:.2f} g/g")
+col3.metric("Predicted Yield (Y_xs)", f"{(delta_X/delta_S if delta_S > 0 else 0):.2f} g/g")
 
-# Save to Supabase button
 if st.button("💾 Save Simulation Run to History", use_container_width=True):
     save_simulation_run(
         st.session_state.user.id,
@@ -392,38 +284,27 @@ st.divider()
 
 col_pred1, col_pred2 = st.columns(2)
 col_pred1.metric("Predicted Final Product Yield", f"{predicted_yield:.3f} g/L")
-col_pred2.metric(
-    "Estimated Substrate Conversion Efficiency", f"{substrate_efficiency:.1f}%"
-)
+col_pred2.metric("Estimated Substrate Conversion Efficiency", f"{substrate_efficiency:.1f}%")
 
 if min_pH >= 5.0 and do_stress_hours <= 8.0:
     st.success("✅ Fermentation Parameters within Optimal Operating Window.")
 else:
-    st.warning(
-        "⚠️ Operating parameters outside ideal range: Increased stress detected."
-    )
+    st.warning("⚠️ Operating parameters outside ideal range: Increased stress detected.")
 
 st.divider()
 
 # ---------------------------------------------------------
-# 6. FEATURE 1: Interactive Monod Kinematics Plot
+# 6. Interactive Monod Kinematics Plot
 # ---------------------------------------------------------
-# ---------------------------------------------------------
-# 6. FEATURE 1: Interactive Monod Kinematics Plot
-# ---------------------------------------------------------
-st.subheader("📈 Interactive Monod Kinetic Simulation (24 hrs)")
+st.subheader(f"📈 Interactive Monod Kinetic Simulation ({sim_time} hrs)")
 
-# Call the cached function instead of recalculating odeint every frame
-t, ode_solution = run_cached_ode(
-    initial_X0, initial_S0, Y_px_kinetic, mu_max, Ks, Y_xs
-)
+sim_df = pd.DataFrame({
+    "Time (hr)": t_span,
+    "Biomass (X)": x_vals,
+    "Substrate (S)": s_vals,
+    "Product (P)": p_vals,
+})
 
-sim_df = pd.DataFrame(
-    ode_solution, columns=["Biomass (X)", "Substrate (S)", "Product (P)"]
-)
-sim_df["Time (hr)"] = t
-
-# Plotly interactive figure
 fig = go.Figure()
 fig.add_trace(
     go.Scatter(
@@ -466,17 +347,14 @@ st.plotly_chart(fig, use_container_width=True)
 st.divider()
 
 # ---------------------------------------------------------
-# 7. FEATURE 2 & 3: Model Interpretability & Batch Export
+# 7. Model Interpretability & Batch Export
 # ---------------------------------------------------------
 col_left, col_right = st.columns(2)
 
 with col_left:
     with st.expander("🔍 Model Interpretability & Feature Importances", expanded=True):
-        st.write(
-            "Relative contribution of each bioreactor variable to the final yield model:"
-        )
+        st.write("Relative contribution of each bioreactor variable to the final yield model:")
 
-        # Matplotlib Horizontal Bar Chart
         importances = pd.Series(
             model.feature_importances_, index=feature_names
         ).sort_values()
@@ -491,11 +369,8 @@ with col_left:
 
 with col_right:
     with st.expander("📥 Export Batch Report", expanded=True):
-        st.write(
-            "Download full parameter logs, simulated 24-hr time-series curves, and predictions for audit compliance."
-        )
+        st.write("Download full parameter logs, simulated time-series curves, and predictions for audit compliance.")
 
-        # Build summary report DataFrame
         summary_report = pd.DataFrame([{
             "Initial_S0_gL": initial_S0,
             "Initial_X0_gL": initial_X0,
@@ -508,7 +383,6 @@ with col_right:
             "Substrate_Efficiency_Pct": round(substrate_efficiency, 1),
         }])
 
-        # Generate CSV bytes
         csv_buffer = io.StringIO()
         summary_report.to_csv(csv_buffer, index=False)
         csv_data = csv_buffer.getvalue()
@@ -521,13 +395,12 @@ with col_right:
             use_container_width=True,
         )
 
-        # Generate Full Simulation Time-Series CSV bytes
         sim_csv_buffer = io.StringIO()
         sim_df.to_csv(sim_csv_buffer, index=False)
         sim_csv_data = sim_csv_buffer.getvalue()
 
         st.download_button(
-            label="📈 Download 24-hr Kinetic Profiles (CSV)",
+            label="📈 Download Kinetic Profiles (CSV)",
             data=sim_csv_data,
             file_name="bioyield_monod_kinetic_series.csv",
             mime="text/csv",
