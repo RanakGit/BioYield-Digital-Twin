@@ -6,3 +6,4 @@ joblib
 scipy
 matplotlib
 plotly
+superbase
