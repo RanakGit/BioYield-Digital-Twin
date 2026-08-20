@@ -333,6 +333,13 @@ solution = odeint(monod_model, [initial_X0, initial_S0], t_span)
 x_vals = solution[:, 0]  # Biomass concentration over time
 s_vals = solution[:, 1]  # Substrate concentration over time
 
+# 1. Calculate delta_X first
+x_final = x_vals[-1]  # Final biomass concentration from ODE solution
+delta_X = x_final - initial_X0
+
+# 2. Now clip delta_X safely (Line 306)
+delta_X = float(np.clip(delta_X, 1.0, 20.0))
+
 # 2. Extract final values & calculate deltas
 x_final = x_vals[-1]  # Final biomass concentration
 s_final = s_vals[-1]  # Final substrate concentration
