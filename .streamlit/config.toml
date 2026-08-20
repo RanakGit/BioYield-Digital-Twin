@@ -5,3 +5,7 @@ showErrorDetails = false
 [browser]
 # Disables gather usage stats popup
 gatherUsageStats = false
+
+[supabase]
+SUPABASE_URL = "https://supabase.com/dashboard/project/uitlgejwclxrbhphlgha"
+SUPABASE_KEY = "sb_publishable_GoKH4wDLAdmqMrxwpw2qwg_Ay68hiqE"
