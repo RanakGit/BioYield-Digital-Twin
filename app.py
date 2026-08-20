@@ -48,31 +48,86 @@ def fermentation_ode(y, t, mu_max, Ks, Y_xs, Y_px):
 # ---------------------------------------------------------
 # 3. Sidebar Inputs
 # ---------------------------------------------------------
+# ---------------------------------------------------------
+# 3. Sidebar Inputs with Reset Button
+# ---------------------------------------------------------
 st.sidebar.header("⚙️ Bioreactor Input Parameters")
 
-initial_S0 = st.sidebar.slider(
-    "Initial Substrate S0 (g/L)", 10.0, 60.0, 35.0, 0.5
-)
-initial_X0 = st.sidebar.slider(
-    "Initial Biomass X0 (g/L)", 0.05, 1.0, 0.25, 0.05
-)
-delta_X = st.sidebar.slider(
-    "Expected Biomass Growth Delta X (g/L)", 1.0, 20.0, 8.0, 0.5
-)
-min_pH = st.sidebar.slider(
-    "Minimum Batch pH Recorded", 4.0, 7.5, 5.5, 0.1
-)
-do_stress_hours = st.sidebar.slider(
-    "DO Stress Duration (<20% DO) in Hours", 0.0, 15.0, 5.0, 0.5
-)
-Y_px_kinetic = st.sidebar.slider(
-    "Specific Product Yield Potential Y_px (g/g)", 0.05, 0.5, 0.20, 0.01
+# Define default values in a dictionary
+DEFAULTS = {
+    "S0": 35.0,
+    "X0": 0.25,
+    "delta_X": 8.0,
+    "min_pH": 5.5,
+    "do_stress": 5.0,
+    "Y_px": 0.20,
+}
+
+
+# Callback function to clear slider state back to defaults
+def reset_to_defaults():
+    for key, value in DEFAULTS.items():
+        st.session_state[key] = value
+
+
+# Add the Reset Button at the top of the sidebar
+st.sidebar.button(
+    "🔄 Reset Inputs to Defaults",
+    on_click=reset_to_defaults,
+    use_container_width=True,
 )
 
-# Assumed typical Monod kinetics for ODE simulation based on inputs
-mu_max = 0.40  # 1/hr max growth rate
-Ks = 1.0  # g/L affinity constant
-Y_xs = 0.50  # g biomass / g substrate yield
+st.sidebar.divider()
+
+# Sliders connected to session_state keys
+initial_S0 = st.sidebar.slider(
+    "Initial Substrate S0 (g/L)",
+    10.0,
+    60.0,
+    DEFAULTS["S0"],
+    0.5,
+    key="S0",
+)
+initial_X0 = st.sidebar.slider(
+    "Initial Biomass X0 (g/L)",
+    0.05,
+    1.0,
+    DEFAULTS["X0"],
+    0.05,
+    key="X0",
+)
+delta_X = st.sidebar.slider(
+    "Expected Biomass Growth Delta X (g/L)",
+    1.0,
+    20.0,
+    DEFAULTS["delta_X"],
+    0.5,
+    key="delta_X",
+)
+min_pH = st.sidebar.slider(
+    "Minimum Batch pH Recorded",
+    4.0,
+    7.5,
+    DEFAULTS["min_pH"],
+    0.1,
+    key="min_pH",
+)
+do_stress_hours = st.sidebar.slider(
+    "DO Stress Duration (<20% DO) in Hours",
+    0.0,
+    15.0,
+    DEFAULTS["do_stress"],
+    0.5,
+    key="do_stress",
+)
+Y_px_kinetic = st.sidebar.slider(
+    "Specific Product Yield Potential Y_px (g/g)",
+    0.05,
+    0.5,
+    DEFAULTS["Y_px"],
+    0.01,
+    key="Y_px",
+)
 
 # ---------------------------------------------------------
 # 4. Feature Calculations & Prediction
