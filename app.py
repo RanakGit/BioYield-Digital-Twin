@@ -17,7 +17,7 @@ st.set_page_config(
 
 
 # ---------------------------------------------------------
-# 1. Model & Data Loaders
+# 1. Model & Data Loaders (CACHED FOR MULTI-USER PERFORMANCE)
 # ---------------------------------------------------------
 @st.cache_resource
 def load_assets():
