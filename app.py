@@ -308,6 +308,20 @@ delta_X = float(np.clip(delta_X, 1.0, 20.0))
 min_pH = float(np.clip(min_pH, 4.0, 7.5))
 do_stress_hours = float(np.clip(do_stress_hours, 0.0, 15.0))
 Y_px_kinetic = float(np.clip(Y_px_kinetic, 0.05, 0.5))
+# ---------------------------------------------------------
+# Dissolved Oxygen (DO) & Stress Analysis
+# ---------------------------------------------------------
+# Example: If do_vals is your array of DO values over time array t_span
+CRITICAL_DO_THRESHOLD = 20.0  # % saturation
+
+# Calculate time spent under critical DO threshold
+# (Assumes uniform time step dt in t_span)
+if 'do_vals' in locals() and 't_span' in locals() and len(t_span) > 1:
+    dt = t_span[1] - t_span[0]
+    do_stress_hours = float(np.sum(do_vals < CRITICAL_DO_THRESHOLD) * dt)
+else:
+    # Default fallback if DO tracking isn't active
+    do_stress_hours = 0.0
 
 # Derived features & model prediction using the sanitized inputs
 s0_x0_ratio = initial_S0 / initial_X0 if initial_X0 > 0 else 0
