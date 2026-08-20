@@ -329,6 +329,20 @@ substrate_efficiency = (
     (predicted_yield / initial_S0) * 100 if initial_S0 > 0 else 0
 )
 
+solution = odeint(monod_model, [initial_X0, initial_S0], t_span)
+x_vals = solution[:, 0]  # Biomass concentration over time
+s_vals = solution[:, 1]  # Substrate concentration over time
+
+# 2. Extract final values & calculate deltas
+x_final = x_vals[-1]  # Final biomass concentration
+s_final = s_vals[-1]  # Final substrate concentration
+
+delta_X = x_final - initial_X0  # Total biomass produced (g/L)
+delta_S = initial_S0 - s_final  # Total substrate consumed (g/L)
+
+# Biomass yield Y_xs (g/g)
+predicted_yield = delta_X / delta_S if delta_S > 0 else 0.0
+
 # ---------------------------------------------------------
 # 5. UI Layout - Title & Key Metrics
 # ---------------------------------------------------------
