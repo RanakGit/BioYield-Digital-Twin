@@ -351,11 +351,20 @@ st.markdown(
     "Predict final fermentation product yield (g/L) in real-time based on initial media stoichiometry, biomass kinetics, and environmental stress logs."
 )
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("S0 / X0 Ratio", f"{s0_x0_ratio:.1f}")
-col2.metric("Min pH", f"{min_pH:.2f}")
-col3.metric("DO Stress Time", f"{do_stress_hours:.1f} hrs")
-col4.metric("Growth ΔX", f"{delta_X:.1f} g/L")
+col1, col2, col3 = st.columns(3)
+col1.metric("Biomass Produced (ΔX)", f"{delta_X:.2f} g/L")
+col2.metric("Substrate Consumed (ΔS)", f"{delta_S:.2f} g/L")
+col3.metric("Predicted Yield (Y_xs)", f"{predicted_yield:.2f} g/g")
+
+# Save to Supabase button
+if st.button("💾 Save Simulation Run to History", use_container_width=True):
+    save_simulation_run(
+        st.session_state.user.id,
+        initial_S0,
+        initial_X0,
+        min_pH,
+        predicted_yield,
+    )
 
 st.divider()
 
