@@ -207,13 +207,16 @@ st.divider()
 # ---------------------------------------------------------
 # 6. FEATURE 1: Interactive Monod Kinematics Plot
 # ---------------------------------------------------------
+# ---------------------------------------------------------
+# 6. FEATURE 1: Interactive Monod Kinematics Plot
+# ---------------------------------------------------------
 st.subheader("📈 Interactive Monod Kinetic Simulation (24 hrs)")
 
-# Integrate ODEs for 24-hour batch profile
-t = np.linspace(0, 24, 100)
-ode_solution = odeint(
-    fermentation_ode, [initial_X0, initial_S0, 0], t, args=(mu_max, Ks, Y_xs, Y_px_kinetic)
+# Call the cached function instead of recalculating odeint every frame
+t, ode_solution = run_cached_ode(
+    initial_X0, initial_S0, Y_px_kinetic, mu_max, Ks, Y_xs
 )
+
 sim_df = pd.DataFrame(
     ode_solution, columns=["Biomass (X)", "Substrate (S)", "Product (P)"]
 )
