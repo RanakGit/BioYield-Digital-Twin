@@ -17,6 +17,22 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
+def save_simulation_run(
+    user_id, initial_S0, initial_X0, min_pH, predicted_yield
+):
+    try:
+        data = {
+            "user_id": user_id,
+            "initial_s0": initial_S0,
+            "initial_x0": initial_X0,
+            "min_ph": min_pH,
+            "predicted_yield": round(float(predicted_yield), 2),
+        }
+        supabase.table("simulations").insert(data).execute()
+        st.toast("✅ Simulation saved to your history!", icon="💾")
+    except Exception as e:
+        st.error(f"Failed to save simulation to database: {e}")
+
 # Initialize session state for auth
 if "user" not in st.session_state:
     st.session_state.user = None
