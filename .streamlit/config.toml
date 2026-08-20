@@ -1,0 +1,7 @@
+[client]
+# Prevents raw tracebacks from showing up in the browser for end users
+showErrorDetails = false
+
+[browser]
+# Disables gather usage stats popup
+gatherUsageStats = false
