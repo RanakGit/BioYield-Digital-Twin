@@ -1,9 +1,10 @@
 streamlit
 pandas
 numpy
+scipy
 scikit-learn
 joblib
-scipy
-matplotlib
 plotly
-superbase
+matplotlib
+supabase
+gotrue
