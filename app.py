@@ -6,10 +6,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from scipy.integrate import odeint
 import streamlit as st
-# Sanitize and bound inputs defensively
-initial_S0 = float(np.clip(initial_S0, 10.0, 60.0))
-initial_X0 = float(np.clip(initial_X0, 0.05, 1.0))
-min_pH = float(np.clip(min_pH, 4.0, 7.5))
+
 
 # Set page configuration
 st.set_page_config(
@@ -138,9 +135,17 @@ Y_xs = 0.50  # g biomass / g substrate yield
 # ---------------------------------------------------------
 # 4. Feature Calculations & Prediction
 # ---------------------------------------------------------
+# Add input bounds sanitization right here!
+initial_S0 = float(np.clip(initial_S0, 10.0, 60.0))
+initial_X0 = float(np.clip(initial_X0, 0.05, 1.0))
+delta_X = float(np.clip(delta_X, 1.0, 20.0))
+min_pH = float(np.clip(min_pH, 4.0, 7.5))
+do_stress_hours = float(np.clip(do_stress_hours, 0.0, 15.0))
+Y_px_kinetic = float(np.clip(Y_px_kinetic, 0.05, 0.5))
+
+# Derived features & model prediction using the sanitized inputs
 s0_x0_ratio = initial_S0 / initial_X0 if initial_X0 > 0 else 0
 
-# Construct input DataFrame matching feature list order
 input_data = pd.DataFrame(
     [[
         initial_S0,
@@ -154,12 +159,10 @@ input_data = pd.DataFrame(
     columns=feature_names,
 )
 
-# Model yield prediction
 predicted_yield = model.predict(input_data)[0]
 substrate_efficiency = (
     (predicted_yield / initial_S0) * 100 if initial_S0 > 0 else 0
 )
-
 
 # ---------------------------------------------------------
 # 5. UI Layout - Title & Key Metrics
