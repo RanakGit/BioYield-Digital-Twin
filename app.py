@@ -45,9 +45,7 @@ def fermentation_ode(y, t, mu_max, Ks, Y_xs, Y_px):
     return [dXdt, dSdt, dPdt]
 
 
-# ---------------------------------------------------------
-# 3. Sidebar Inputs
-# ---------------------------------------------------------
+
 # ---------------------------------------------------------
 # 3. Sidebar Inputs with Reset Button
 # ---------------------------------------------------------
@@ -128,6 +126,10 @@ Y_px_kinetic = st.sidebar.slider(
     0.01,
     key="Y_px",
 )
+# Monod kinetic constants for ODE simulation
+mu_max = 0.40  # 1/hr max growth rate
+Ks = 1.0  # g/L affinity constant
+Y_xs = 0.50  # g biomass / g substrate yield
 
 # ---------------------------------------------------------
 # 4. Feature Calculations & Prediction
