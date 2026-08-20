@@ -15,6 +15,97 @@ st.set_page_config(
     layout="wide",
 )
 
+# ---------------------------------------------------------
+# ChatGPT Dark Theme Custom CSS
+# ---------------------------------------------------------
+st.markdown(
+    """
+    <style>
+    /* Global Backgrounds */
+    .stApp {
+        background-color: #202123;
+        color: #ECECF1;
+        font-family: 'Söhne', 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    /* Sidebar Styling */
+    section[data-testid="stSidebar"] {
+        background-color: #343541 !important;
+        border-right: 1px solid #4d4d4f;
+    }
+    section[data-testid="stSidebar"] * {
+        color: #ECECF1 !important;
+    }
+    
+    /* Metric Cards (ChatGPT Container Style) */
+    div[data-testid="stMetric"] {
+        background-color: #2A2B32;
+        border: 1px solid #3E3F4B;
+        padding: 16px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+    }
+    div[data-testid="stMetricLabel"] p {
+        color: #8E8EA0 !important;
+        font-size: 0.85rem !important;
+        font-weight: 500;
+    }
+    div[data-testid="stMetricValue"] div {
+        color: #10A37F !important; /* ChatGPT Accent Green */
+        font-weight: 600;
+    }
+    
+    /* Tabs Styling */
+    button[data-baseweb="tab"] {
+        background-color: transparent !important;
+        color: #8E8EA0 !important;
+        border-bottom: 2px solid transparent !important;
+        font-size: 0.95rem;
+        padding: 10px 16px;
+    }
+    button[aria-selected="true"] {
+        color: #ECECF1 !important;
+        border-bottom: 2px solid #10A37F !important;
+        font-weight: 600;
+    }
+    
+    /* Headers & Text */
+    h1, h2, h3 {
+        color: #ECECF1 !important;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+    }
+    .stCaption {
+        color: #8E8EA0 !important;
+    }
+    
+    /* Custom Prompt / Callout Boxes */
+    .chat-card {
+        background-color: #343541;
+        border: 1px solid #4d4d4f;
+        border-radius: 8px;
+        padding: 16px 20px;
+        margin-bottom: 20px;
+    }
+    
+    /* Buttons (ChatGPT Accent Button) */
+    .stDownloadButton > button {
+        background-color: #10A37F !important;
+        color: #FFFFFF !important;
+        border: none !important;
+        border-radius: 6px !important;
+        padding: 8px 16px !important;
+        font-weight: 500 !important;
+        transition: background-color 0.2s ease;
+    }
+    .stDownloadButton > button:hover {
+        background-color: #1A7F64 !important;
+    }
+    </style>
+""",
+    unsafe_allow_html=True,
+)
+
 
 # ---------------------------------------------------------
 # 1. Model & Data Loaders (CACHED FOR MULTI-USER PERFORMANCE)
