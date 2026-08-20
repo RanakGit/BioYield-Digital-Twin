@@ -254,68 +254,48 @@ def reset_to_defaults():
         st.session_state[key] = value
 
 
-# Add the Reset Button at the top of the sidebar
-st.sidebar.button(
-    "🔄 Reset Inputs to Defaults",
-    on_click=reset_to_defaults,
-    use_container_width=True,
+# Initial Substrate Concentration S0 (g/L)
+initial_S0 = st.sidebar.number_input(
+    label="Initial Substrate S₀ (g/L)",
+    min_value=0.0,
+    max_value=500.0,
+    value=20.0,  # Default value
+    step=0.5,
+    format="%.2f",
+    help="Enter starting substrate concentration in g/L",
 )
 
-st.sidebar.divider()
+# Initial Biomass Concentration X0 (g/L)
+initial_X0 = st.sidebar.number_input(
+    label="Initial Biomass X₀ (g/L)",
+    min_value=0.0,
+    max_value=50.0,
+    value=0.5,  # Default value
+    step=0.1,
+    format="%.2f",
+    help="Enter starting biomass concentration in g/L",
+)
 
-# Sliders connected to session_state keys
-initial_S0 = st.sidebar.slider(
-    "Initial Substrate S0 (g/L)",
-    10.0,
-    60.0,
-    DEFAULTS["S0"],
-    0.5,
-    key="S0",
+# Minimum pH
+min_pH = st.sidebar.number_input(
+    label="Minimum pH",
+    min_value=2.0,
+    max_value=12.0,
+    value=6.8,  # Default value
+    step=0.1,
+    format="%.2f",
+    help="Set the minimum target pH for the culture run",
 )
-initial_X0 = st.sidebar.slider(
-    "Initial Biomass X0 (g/L)",
-    0.05,
-    1.0,
-    DEFAULTS["X0"],
-    0.05,
-    key="X0",
+
+# Simulation Duration (Hours)
+sim_time = st.sidebar.number_input(
+    label="Simulation Time (Hours)",
+    min_value=1,
+    max_value=120,
+    value=48,  # Default value
+    step=1,
+    help="Total duration of the batch run in hours",
 )
-delta_X = st.sidebar.slider(
-    "Expected Biomass Growth Delta X (g/L)",
-    1.0,
-    20.0,
-    DEFAULTS["delta_X"],
-    0.5,
-    key="delta_X",
-)
-min_pH = st.sidebar.slider(
-    "Minimum Batch pH Recorded",
-    4.0,
-    7.5,
-    DEFAULTS["min_pH"],
-    0.1,
-    key="min_pH",
-)
-do_stress_hours = st.sidebar.slider(
-    "DO Stress Duration (<20% DO) in Hours",
-    0.0,
-    15.0,
-    DEFAULTS["do_stress"],
-    0.5,
-    key="do_stress",
-)
-Y_px_kinetic = st.sidebar.slider(
-    "Specific Product Yield Potential Y_px (g/g)",
-    0.05,
-    0.5,
-    DEFAULTS["Y_px"],
-    0.01,
-    key="Y_px",
-)
-# Monod kinetic constants for ODE simulation
-mu_max = 0.40  # 1/hr max growth rate
-Ks = 1.0  # g/L affinity constant
-Y_xs = 0.50  # g biomass / g substrate yield
 
 # ---------------------------------------------------------
 # 4. Feature Calculations & Prediction
