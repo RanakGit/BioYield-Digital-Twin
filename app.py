@@ -301,6 +301,7 @@ sim_time = st.sidebar.number_input(
 # 4. Feature Calculations & Prediction
 # ---------------------------------------------------------
 # Add input bounds sanitization right here!
+delta_X = 0.0
 initial_S0 = float(np.clip(initial_S0, 10.0, 60.0))
 initial_X0 = float(np.clip(initial_X0, 0.05, 1.0))
 delta_X = float(np.clip(delta_X, 1.0, 20.0))
