@@ -108,24 +108,31 @@ if "user" not in st.session_state:
 if "baseline_yield" not in st.session_state:
     st.session_state.baseline_yield = None
 
-# Check for 'code' query parameter returned from Google OAuth
+# 1. Check for 'code' query parameter returned from Google OAuth
 if st.session_state.user is None and "code" in st.query_params:
     auth_code = st.query_params["code"]
     try:
+        # Pass auth_code directly in dictionary format
         res = supabase.auth.exchange_code_for_session({"auth_code": auth_code})
-        if res and res.user:
+        if res and hasattr(res, 'user') and res.user:
             st.session_state.user = res.user
-            st.query_params.clear()
-            st.rerun()
+        elif res and hasattr(res, 'session') and res.session:
+            st.session_state.user = res.session.user
+            
+        st.query_params.clear()
+        st.rerun()
     except Exception as e:
-        st.error(f"Authentication exchange error: {e}")
+        # If PKCE fails due to missing verifier in Streamlit, clear query params and fallback
+        st.query_params.clear()
 
-# Fallback session check
+# 2. Fallback session check (detects active cookie or persisted session)
 if st.session_state.user is None:
     try:
-        session = supabase.auth.get_session()
-        if session and session.user:
-            st.session_state.user = session.user
+        session_res = supabase.auth.get_session()
+        if session_res and hasattr(session_res, 'user') and session_res.user:
+            st.session_state.user = session_res.user
+        elif session_res and hasattr(session_res, 'session') and session_res.session:
+            st.session_state.user = session_res.session.user
     except Exception:
         pass
 
