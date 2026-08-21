@@ -47,7 +47,9 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ---------------------------------------------------------
 # Initialize Supabase Client
+# ---------------------------------------------------------
 @st.cache_resource
 def init_supabase() -> Client:
     if "supabase" not in st.secrets:
@@ -80,11 +82,15 @@ def fetch_user_history(user_id):
     except Exception as e:
         st.error(f"Error fetching simulation history: {e}")
         return pd.DataFrame()
-        
 
-# Session State Initialization
+# ---------------------------------------------------------
+# Session State & Parameter Reset Logic
+# ---------------------------------------------------------
 if "user" not in st.session_state:
     st.session_state.user = None
+
+if "baseline_yield" not in st.session_state:
+    st.session_state.baseline_yield = None
 
 # Recover user session from Supabase SDK if returning from OAuth
 if st.session_state.user is None:
@@ -95,8 +101,30 @@ if st.session_state.user is None:
     except Exception:
         pass
 
+# Default parameters reset dictionary
+DEFAULT_PARAMS = {
+    "initial_S0": 35.0,
+    "initial_X0": 0.25,
+    "min_pH": 5.5,
+    "sim_time": 24,
+    "Y_px_kinetic": 0.20,
+    "mu_max": 0.40,
+    "Ks": 0.50,
+    "Y_xs": 0.50,
+}
+
+# Initialize sidebar inputs in session state if not already set
+for key, val in DEFAULT_PARAMS.items():
+    if key not in st.session_state:
+        st.session_state[key] = val
+
+def reset_parameters():
+    for key, val in DEFAULT_PARAMS.items():
+        st.session_state[key] = val
+    st.toast("🔄 Parameters reset to default values!", icon="⚙️")
+
 # ---------------------------------------------------------
-# AUTHENTICATION SCREEN (Fixed Google OAuth Link)
+# AUTHENTICATION SCREEN
 # ---------------------------------------------------------
 def render_auth_ui():
     st.markdown("<h2 style='text-align: center;'>🧪 BioYield-Predict</h2>", unsafe_allow_html=True)
@@ -131,17 +159,14 @@ def render_auth_ui():
                     
         st.divider()
         
-        # Get redirect target (http://localhost:8501)
         redirect_target = st.secrets["supabase"].get("REDIRECT_URL", "http://localhost:8501")
 
-        # Generate Google OAuth authorization URL directly
         try:
             auth_response = supabase.auth.sign_in_with_oauth({
                 "provider": "google",
                 "options": {"redirect_to": redirect_target}
             })
             
-            # Use Streamlit's native link_button so the browser navigates immediately
             if hasattr(auth_response, 'url') and auth_response.url:
                 st.link_button("🌐 Continue with Google", auth_response.url, use_container_width=True)
             else:
@@ -150,6 +175,11 @@ def render_auth_ui():
             st.error(f"OAuth initialization error: {e}")
                 
         st.markdown('</div>', unsafe_allow_html=True)
+
+# Render login UI if user is not authenticated and halt further execution
+if st.session_state.user is None:
+    render_auth_ui()
+    st.stop()
 
 # ---------------------------------------------------------
 # 1. Asset & Model Loaders
@@ -205,39 +235,53 @@ def run_cached_ode(X0, S0, Y_px, mu_max, Ks, Y_xs, min_pH, hours):
     return t, solution
 
 # ---------------------------------------------------------
-# 3. Sidebar Inputs
+# 3. Sidebar Inputs & Reset Button
 # ---------------------------------------------------------
 st.sidebar.header("⚙️ Bioreactor Parameters")
 
+if st.sidebar.button("🔄 Reset to Default Parameters", use_container_width=True):
+    reset_parameters()
+
 initial_S0 = st.sidebar.number_input(
     label="Initial Substrate S₀ (g/L)",
-    min_value=10.0, max_value=60.0, value=35.0, step=0.5, format="%.2f",
+    min_value=10.0, max_value=60.0, step=0.5, format="%.2f",
+    key="initial_S0",
     help="Starting substrate/sugar concentration in the fermentation medium.",
 )
 
 initial_X0 = st.sidebar.number_input(
     label="Initial Biomass X₀ (g/L)",
-    min_value=0.05, max_value=1.0, value=0.25, step=0.05, format="%.2f",
+    min_value=0.05, max_value=1.0, step=0.05, format="%.2f",
+    key="initial_X0",
     help="Initial seed culture biomass concentration.",
 )
 
 min_pH = st.sidebar.number_input(
     label="Minimum pH",
-    min_value=4.0, max_value=7.5, value=5.5, step=0.1, format="%.2f",
+    min_value=4.0, max_value=7.5, step=0.1, format="%.2f",
+    key="min_pH",
     help="Minimum environment pH. Values outside 5.5-7.0 impose metabolic stress.",
 )
 
 sim_time = st.sidebar.number_input(
     label="Simulation Time (Hours)",
-    min_value=1, max_value=120, value=24, step=1,
+    min_value=1, max_value=120, step=1,
+    key="sim_time",
     help="Total batch operation duration.",
 )
 
 st.sidebar.subheader("🧫 Kinetic Coefficients")
-Y_px_kinetic = st.sidebar.number_input("Product Yield (Y_px)", 0.05, 0.50, 0.20, step=0.01)
-mu_max = st.sidebar.number_input("Max Growth Rate (μ_max)", 0.1, 1.0, 0.4, step=0.05)
-Ks = st.sidebar.number_input("Half-Sat Constant (Ks)", 0.1, 5.0, 0.5, step=0.1)
-Y_xs = st.sidebar.number_input("Biomass Yield (Y_xs)", 0.1, 0.9, 0.5, step=0.05)
+Y_px_kinetic = st.sidebar.number_input("Product Yield (Y_px)", 0.05, 0.50, step=0.01, key="Y_px_kinetic")
+mu_max = st.sidebar.number_input("Max Growth Rate (μ_max)", 0.1, 1.0, step=0.05, key="mu_max")
+Ks = st.sidebar.number_input("Half-Sat Constant (Ks)", 0.1, 5.0, step=0.1, key="Ks")
+Y_xs = st.sidebar.number_input("Biomass Yield (Y_xs)", 0.1, 0.9, step=0.05, key="Y_xs")
+
+# Logout Option in Sidebar
+st.sidebar.divider()
+if st.sidebar.button("🚪 Sign Out", use_container_width=True):
+    supabase.auth.sign_out()
+    st.session_state.user = None
+    st.rerun()
 
 # ---------------------------------------------------------
 # 4. Feature Calculations & Prediction Pipeline
@@ -257,12 +301,10 @@ s_final = s_vals[-1]
 delta_X = float(x_final - initial_X0)
 delta_S = float(initial_S0 - s_final)
 
-# Precise DO Stress Calculation based on actual ODE integration
 CRITICAL_DO_THRESHOLD = 20.0
 dt = t_span[1] - t_span[0] if len(t_span) > 1 else 1.0
 do_stress_hours = float(np.sum(do_vals < CRITICAL_DO_THRESHOLD) * dt)
 
-# Feature clipping for machine learning model safety
 initial_S0_clipped = float(np.clip(initial_S0, 10.0, 60.0))
 initial_X0_clipped = float(np.clip(initial_X0, 0.05, 1.0))
 delta_X_clipped = float(np.clip(delta_X, 1.0, 20.0))
@@ -423,13 +465,11 @@ with tab_history:
     history_df = fetch_user_history(st.session_state.user.id)
     
     if not history_df.empty:
-        # Display formatted table
         display_df = history_df[["created_at", "initial_s0", "initial_x0", "min_ph", "predicted_yield"]].copy()
         display_df.columns = ["Timestamp", "Initial S₀ (g/L)", "Initial X₀ (g/L)", "Min pH", "Predicted Yield (g/L)"]
         
         st.dataframe(display_df, use_container_width=True, hide_index=True)
         
-        # Download full history
         hist_csv = io.StringIO()
         display_df.to_csv(hist_csv, index=False)
         st.download_button("📥 Download History Log (CSV)", hist_csv.getvalue(), "simulation_history.csv", "text/csv")
