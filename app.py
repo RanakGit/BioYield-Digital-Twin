@@ -52,24 +52,16 @@ st.markdown(
 # ---------------------------------------------------------
 @st.cache_resource
 def init_supabase() -> Client:
-    if "supabase" not in st.secrets:
-        st.error("Missing [supabase] section in Streamlit Secrets!")
+    # Safely extract URL and KEY from top-level or nested [supabase] secrets
+    url = st.secrets.get("SUPABASE_URL") or st.secrets.get("supabase", {}).get("SUPABASE_URL")
+    key = st.secrets.get("SUPABASE_KEY") or st.secrets.get("supabase", {}).get("SUPABASE_KEY")
+
+    if not url or not key:
+        st.error("Missing SUPABASE_URL or SUPABASE_KEY in Streamlit Secrets!")
         st.stop()
-    url = st.secrets["supabase"]["SUPABASE_URL"]
-    key = st.secrets["supabase"]["SUPABASE_KEY"]
-    
-    # Initialize create_client with dictionary options (No direct gotrue dependency)
-    return create_client(
-        url, 
-        key,
-        options={
-            "auth": {
-                "flow_type": "pkce",
-                "auto_refresh_token": True,
-                "persist_session": True
-            }
-        }
-    )
+
+    # Create client cleanly without invalid options dictionary
+    return create_client(url, key)
 
 # Execute client instantiation
 supabase = init_supabase()
@@ -120,7 +112,6 @@ if "baseline_yield" not in st.session_state:
 if st.session_state.user is None and "code" in st.query_params:
     auth_code = st.query_params["code"]
     try:
-        # Exchange authorization code for active session
         res = supabase.auth.exchange_code_for_session({"auth_code": auth_code})
         if res and res.user:
             st.session_state.user = res.user
@@ -174,7 +165,7 @@ def render_auth_ui():
                     
         st.divider()
         
-        redirect_target = st.secrets["supabase"].get("REDIRECT_URL", "http://localhost:8501")
+        redirect_target = st.secrets.get("REDIRECT_URL") or st.secrets.get("supabase", {}).get("REDIRECT_URL", "http://localhost:8501")
 
         try:
             auth_response = supabase.auth.sign_in_with_oauth({
@@ -294,7 +285,10 @@ Y_xs = st.sidebar.number_input("Biomass Yield (Y_xs)", 0.1, 0.9, value=0.50, ste
 # Logout Option in Sidebar
 st.sidebar.divider()
 if st.sidebar.button("🚪 Sign Out", use_container_width=True):
-    supabase.auth.sign_out()
+    try:
+        supabase.auth.sign_out()
+    except Exception:
+        pass
     st.session_state.user = None
     st.rerun()
 
