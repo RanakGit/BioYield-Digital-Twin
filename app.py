@@ -127,7 +127,7 @@ def render_auth_ui():
             try:
                 res = supabase.auth.sign_in_with_oauth({
                     "provider": "google",
-                    "options": {"redirect_to": st.secrets["supabase"].get("REDIRECT_URL", "https://share.streamlit.io")}
+                    "options": {"redirect_to": st.secrets["supabase"].get("REDIRECT_URL", "http://localhost:8501")}
                 })
                 st.info("Redirecting to Google authentication...")
             except Exception as e:
