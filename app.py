@@ -48,10 +48,8 @@ st.markdown(
 )
 
 # ---------------------------------------------------------
-# Initialize Supabase Client
+# Helper Functions & Supabase Database Operations
 # ---------------------------------------------------------
-from gotrue.options import AuthOptions # Optional, or configure in client creation
-
 @st.cache_resource
 def init_supabase() -> Client:
     if "supabase" not in st.secrets:
@@ -60,7 +58,7 @@ def init_supabase() -> Client:
     url = st.secrets["supabase"]["SUPABASE_URL"]
     key = st.secrets["supabase"]["SUPABASE_KEY"]
     
-    # Initialize create_client with explicit PKCE flow
+    # Initialize create_client with dictionary options (No direct gotrue dependency)
     return create_client(
         url, 
         key,
@@ -72,6 +70,42 @@ def init_supabase() -> Client:
             }
         }
     )
+
+# Execute client instantiation
+supabase = init_supabase()
+
+def save_simulation_run(user_id: str, s0: float, x0: float, ph: float, yield_val: float):
+    try:
+        data = {
+            "user_id": user_id,
+            "initial_s0": s0,
+            "initial_x0": x0,
+            "min_ph": ph,
+            "predicted_yield": yield_val
+        }
+        supabase.table("simulation_runs").insert(data).execute()
+        st.toast("Simulation run saved to history!", icon="💾")
+    except Exception as e:
+        st.error(f"Failed to save simulation to database: {e}")
+
+def fetch_user_history(user_id: str) -> pd.DataFrame:
+    try:
+        response = supabase.table("simulation_runs").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
+        if response.data:
+            return pd.DataFrame(response.data)
+    except Exception as e:
+        st.error(f"Failed to fetch history: {e}")
+    return pd.DataFrame()
+
+def reset_parameters():
+    st.session_state.initial_S0 = 30.0
+    st.session_state.initial_X0 = 0.20
+    st.session_state.min_pH = 6.8
+    st.session_state.sim_time = 48
+    st.session_state.Y_px_kinetic = 0.20
+    st.session_state.mu_max = 0.40
+    st.session_state.Ks = 1.0
+    st.session_state.Y_xs = 0.50
 
 # ---------------------------------------------------------
 # Session State & Robust OAuth Callback Handler
@@ -103,6 +137,7 @@ if st.session_state.user is None:
             st.session_state.user = session.user
     except Exception:
         pass
+
 # ---------------------------------------------------------
 # AUTHENTICATION SCREEN
 # ---------------------------------------------------------
@@ -224,37 +259,37 @@ if st.sidebar.button("🔄 Reset to Default Parameters", use_container_width=Tru
 
 initial_S0 = st.sidebar.number_input(
     label="Initial Substrate S₀ (g/L)",
-    min_value=10.0, max_value=60.0, step=0.5, format="%.2f",
+    min_value=10.0, max_value=60.0, value=30.0, step=0.5, format="%.2f",
     key="initial_S0",
     help="Starting substrate/sugar concentration in the fermentation medium.",
 )
 
 initial_X0 = st.sidebar.number_input(
     label="Initial Biomass X₀ (g/L)",
-    min_value=0.05, max_value=1.0, step=0.05, format="%.2f",
+    min_value=0.05, max_value=1.0, value=0.20, step=0.05, format="%.2f",
     key="initial_X0",
     help="Initial seed culture biomass concentration.",
 )
 
 min_pH = st.sidebar.number_input(
     label="Minimum pH",
-    min_value=4.0, max_value=7.5, step=0.1, format="%.2f",
+    min_value=4.0, max_value=7.5, value=6.8, step=0.1, format="%.2f",
     key="min_pH",
     help="Minimum environment pH. Values outside 5.5-7.0 impose metabolic stress.",
 )
 
 sim_time = st.sidebar.number_input(
     label="Simulation Time (Hours)",
-    min_value=1, max_value=120, step=1,
+    min_value=1, max_value=120, value=48, step=1,
     key="sim_time",
     help="Total batch operation duration.",
 )
 
 st.sidebar.subheader("🧫 Kinetic Coefficients")
-Y_px_kinetic = st.sidebar.number_input("Product Yield (Y_px)", 0.05, 0.50, step=0.01, key="Y_px_kinetic")
-mu_max = st.sidebar.number_input("Max Growth Rate (μ_max)", 0.1, 1.0, step=0.05, key="mu_max")
-Ks = st.sidebar.number_input("Half-Sat Constant (Ks)", 0.1, 5.0, step=0.1, key="Ks")
-Y_xs = st.sidebar.number_input("Biomass Yield (Y_xs)", 0.1, 0.9, step=0.05, key="Y_xs")
+Y_px_kinetic = st.sidebar.number_input("Product Yield (Y_px)", 0.05, 0.50, value=0.20, step=0.01, key="Y_px_kinetic")
+mu_max = st.sidebar.number_input("Max Growth Rate (μ_max)", 0.1, 1.0, value=0.40, step=0.05, key="mu_max")
+Ks = st.sidebar.number_input("Half-Sat Constant (Ks)", 0.1, 5.0, value=1.0, step=0.1, key="Ks")
+Y_xs = st.sidebar.number_input("Biomass Yield (Y_xs)", 0.1, 0.9, value=0.50, step=0.05, key="Y_xs")
 
 # Logout Option in Sidebar
 st.sidebar.divider()
