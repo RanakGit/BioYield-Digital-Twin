@@ -4,25 +4,121 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from scipy.integrate import odeint
+from supabase import create_client, Client
 
 # Set page configuration
 st.set_page_config(page_title="BioYield Digital Twin", layout="wide")
 
+# ---------------------------------------------------------
+# 1. SUPABASE AUTHENTICATION & SESSION SETUP
+# ---------------------------------------------------------
+SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
+SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
+
+@st.cache_resource
+def init_supabase() -> Client:
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
+
+supabase = init_supabase()
+
+# Session State Initialization
+if "user" not in st.session_state:
+    st.session_state.user = None
+
+if "baseline_yield" not in st.session_state:
+    st.session_state.baseline_yield = 5.0  # Default baseline yield (g/L)
+
+# ---------------------------------------------------------
+# 2. OAUTH CALLBACK HANDLER & PKCE GUARD
+# ---------------------------------------------------------
+if st.session_state.user is None and "code" in st.query_params:
+    auth_code = st.query_params["code"]
+    try:
+        res = supabase.auth.exchange_code_for_session({"auth_code": auth_code})
+        if res and hasattr(res, 'user') and res.user:
+            st.session_state.user = res.user
+        elif res and hasattr(res, 'session') and res.session:
+            st.session_state.user = res.session.user
+            
+        st.query_params.clear()
+        st.rerun()
+    except Exception:
+        # Fallback for Streamlit Cloud refresh verifier clearing
+        st.query_params.clear()
+
+# Active Session Persistence Check
+if st.session_state.user is None:
+    try:
+        session_res = supabase.auth.get_session()
+        if session_res and hasattr(session_res, 'user') and session_res.user:
+            st.session_state.user = session_res.user
+        elif session_res and hasattr(session_res, 'session') and session_res.session:
+            st.session_state.user = session_res.session.user
+    except Exception:
+        pass
+
+# ---------------------------------------------------------
+# 3. AUTHENTICATION UI LAYER
+# ---------------------------------------------------------
 st.title("🧫 BioYield Digital Twin: Advanced Bioprocess Studio")
+
+if st.session_state.user is None:
+    st.info("Welcome! Please log in to access the bioprocess digital twin environment.")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Email / Password Sign In")
+        email = st.text_input("Email")
+        password = st.text_input("Password", type="password")
+        if st.button("Log In / Sign Up", type="primary"):
+            try:
+                res = supabase.auth.sign_in_with_password({"email": email, "password": password})
+                if hasattr(res, 'user') and res.user:
+                    st.session_state.user = res.user
+                    st.success("Logged in successfully!")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Authentication error: {e}")
+
+    with col2:
+        st.subheader("Single Sign-On")
+        if st.button("Sign in with Google", type="secondary"):
+            try:
+                response = supabase.auth.sign_in_with_oauth(
+                    {
+                        "provider": "google",
+                        "options": {
+                            "redirect_to": "https://bioyield-digital-twin-wgn36c9vv3sheccq2fe9un.streamlit.app"
+                        }
+                    }
+                )
+                if response and hasattr(response, 'url'):
+                    st.link_button("Proceed to Google Login", response.url, type="primary")
+            except Exception as e:
+                st.error(f"Error initiating Google Login: {e}")
+
+    st.markdown("---")
+    st.stop()  # Halt execution until authenticated
+
+# Sidebar Logout once authenticated
+user_email = getattr(st.session_state.user, 'email', 'Authenticated User')
+st.sidebar.write(f"Logged in as: **{user_email}**")
+if st.sidebar.button("Log Out"):
+    st.session_state.user = None
+    st.rerun()
+
 st.markdown("Real-time bioprocess simulation, stoichiometric balancing, and parameter optimization.")
 
 # ---------------------------------------------------------
-# 1. SIDEBAR: ORGANIZED DATA INPUT & PRESETS
+# 4. SIDEBAR: ORGANIZED DATA INPUT & PRESETS
 # ---------------------------------------------------------
 st.sidebar.header("⚙️ Bioprocess Configuration")
 
-# Preset selection
 preset = st.sidebar.selectbox(
     "Organism / Process Preset",
     ["Custom", "Saccharomyces cerevisiae (Yeast)", "Escherichia coli (Recombinant)"]
 )
 
-# Set defaults based on preset
 if preset == "Saccharomyces cerevisiae (Yeast)":
     default_mu_max, default_Ks, default_Yxs, default_S0 = 0.4, 0.2, 0.5, 50.0
 elif preset == "Escherichia coli (Recombinant)":
@@ -44,16 +140,14 @@ with st.sidebar.expander("🌡️ Operating Conditions", expanded=True):
     ph = st.slider("pH Level", 4.0, 9.0, 6.8, 0.1)
     agitation = st.slider("Agitation Speed (RPM)", 100, 1000, 400, 50)
 
-# ---------------------------------------------------------
-# INPUT VALIDATION ALERTS
-# ---------------------------------------------------------
+# Input Validation Alerts
 if S0 > 150.0:
     st.warning("⚠️ **High Substrate Concentration:** Substrate levels above 150 g/L may trigger substrate inhibition (Haldane kinetics) or osmotic stress.")
 if mode != "Batch" and D >= mu_max:
     st.error("🚨 **Washout Risk:** Dilution rate (D) is greater than or equal to μ_max. Biomass will wash out of the reactor!")
 
 # ---------------------------------------------------------
-# MAIN INTERFACE TABS
+# 5. MAIN INTERFACE TABS
 # ---------------------------------------------------------
 tab1, tab2, tab3, tab4 = st.tabs([
     "📈 Dynamic Kinetics", 
@@ -68,39 +162,38 @@ tab1, tab2, tab3, tab4 = st.tabs([
 with tab1:
     st.subheader("Interactive Fermentation Profile")
 
-    # ODE Model Formulation
     def bioprocess_model(y, t, mu_max, Ks, Y_xs, Y_ps, D, S0):
         X, S, P = y
-        # Monod Kinetics
         mu = mu_max * (S / (Ks + S)) if S > 0 else 0
-        
-        # Mass Balances
         dXdt = (mu - D) * X
         dSdt = D * (S0 - S) - (mu * X / Y_xs)
         dPdt = (Y_ps * mu * X) - (D * P)
-        
         return [max(0, dXdt), dSdt, max(0, dPdt)]
 
-    # Initial conditions
     X0, S0_init, P0 = 0.5, S0 if mode == "Batch" else S0/2, 0.0
-    t = np.linspace(0, 48, 200) # 48 hours simulation
+    t = np.linspace(0, 48, 200)
     
-    # Solve ODEs
     solution = odeint(bioprocess_model, [X0, S0_init, P0], t, args=(mu_max, Ks, Y_xs, Y_ps, D, S0))
     df_sim = pd.DataFrame(solution, columns=["Biomass (X)", "Substrate (S)", "Product (P)"])
     df_sim["Time (h)"] = t
 
-    # Key Performance Metrics Cards
     final_X = df_sim["Biomass (X)"].iloc[-1]
     final_P = df_sim["Product (P)"].iloc[-1]
-    baseline_P = 5.0 # Benchmark baseline for comparison
-    delta_p = ((final_P - baseline_P) / baseline_P) * 100
+    
+    # Calculate percentage change against session state baseline yield
+    baseline_P = st.session_state.baseline_yield
+    delta_p = ((final_P - baseline_P) / baseline_P) * 100 if baseline_P > 0 else 0.0
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Final Biomass (X)", f"{final_X:.2f} g/L")
     col2.metric("Final Product (P)", f"{final_P:.2f} g/L", delta=f"{delta_p:+.1f}% vs Baseline")
     col3.metric("Substrate Conversion", f"{((S0_init - df_sim['Substrate (S)'].iloc[-1])/S0_init)*100:.1f}%")
     col4.metric("Volumetric Productivity", f"{final_P/48:.3f} g/L·h")
+
+    if st.button("Save Current Product Yield as New Session Baseline"):
+        st.session_state.baseline_yield = final_P
+        st.success(f"Updated baseline yield to {final_P:.2f} g/L")
+        st.rerun()
 
     # Plotly Interactive Chart
     fig = go.Figure()
@@ -140,11 +233,9 @@ with tab2:
         o_x = st.number_input("O (Biomass)", value=0.5)
         n_x = st.number_input("N (Biomass)", value=0.2)
 
-    # Molecular weights calculation
     MW_S = c_s*12.011 + h_s*1.008 + o_s*15.999 + n_s*14.007
     MW_X = c_x*12.011 + h_x*1.008 + o_x*15.999 + n_x*14.007
 
-    # Maximum theoretical carbon yield (C-mol/C-mol)
     max_Y_xs_mol = c_x / c_s
     max_Y_xs_mass = max_Y_xs_mol * (MW_X / MW_S)
 
@@ -164,16 +255,11 @@ with tab3:
     st.subheader("Process Sensitivity Heatmap")
     st.markdown("Simulates trade-offs between **Agitation (RPM)**, **Temperature (°C)**, Yield, and estimated **Energy Cost**.")
 
-    # Generate parameter sweep grid
     temps = np.linspace(25, 42, 10)
     agitations = np.linspace(200, 800, 10)
     T_grid, A_grid = np.meshgrid(temps, agitations)
 
-    # Simple response surface models for yield and power consumption
-    # Yield peaks around 32°C and benefits from higher agitation (oxygenation)
     Yield_matrix = Y_xs * np.exp(-((T_grid - 32)**2)/50) * (1 - np.exp(-A_grid/300))
-    
-    # Power consumption P ∝ N^3 * D^5 (proportional to agitation RPM^3)
     Power_cost_matrix = (A_grid / 400)**3 * 1.5 + (T_grid - 25)*0.1
 
     plot_type = st.radio("Select Response Surface Metric:", ["Biomass Yield (g/g)", "Energy Cost Index (kW)"])
@@ -205,7 +291,6 @@ with tab4:
     st.subheader("Export Run Data & Parameters")
     st.markdown("Download generated simulation trajectories and batch parameters for record-keeping or downstream analytical modeling.")
 
-    # Summary table
     st.dataframe(df_sim.head(10), use_container_width=True)
 
     csv_data = df_sim.to_csv(index=False).encode('utf-8')
