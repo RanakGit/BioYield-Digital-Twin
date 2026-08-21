@@ -50,6 +50,8 @@ st.markdown(
 # ---------------------------------------------------------
 # Initialize Supabase Client
 # ---------------------------------------------------------
+from gotrue.options import AuthOptions # Optional, or configure in client creation
+
 @st.cache_resource
 def init_supabase() -> Client:
     if "supabase" not in st.secrets:
@@ -57,31 +59,19 @@ def init_supabase() -> Client:
         st.stop()
     url = st.secrets["supabase"]["SUPABASE_URL"]
     key = st.secrets["supabase"]["SUPABASE_KEY"]
-    return create_client(url, key)
-
-supabase = init_supabase()
-
-def save_simulation_run(user_id, initial_S0, initial_X0, min_pH, predicted_yield):
-    try:
-        data = {
-            "user_id": user_id,
-            "initial_s0": initial_S0,
-            "initial_x0": initial_X0,
-            "min_ph": min_pH,
-            "predicted_yield": round(float(predicted_yield), 3),
+    
+    # Initialize create_client with explicit PKCE flow
+    return create_client(
+        url, 
+        key,
+        options={
+            "auth": {
+                "flow_type": "pkce",
+                "auto_refresh_token": True,
+                "persist_session": True
+            }
         }
-        supabase.table("simulations").insert(data).execute()
-        st.toast("✅ Simulation saved to your history!", icon="💾")
-    except Exception as e:
-        st.error(f"Failed to save simulation: {e}")
-
-def fetch_user_history(user_id):
-    try:
-        response = supabase.table("simulations").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
-        return pd.DataFrame(response.data)
-    except Exception as e:
-        st.error(f"Error fetching simulation history: {e}")
-        return pd.DataFrame()
+    )
 
 # ---------------------------------------------------------
 # Session State & OAuth Callback Handler
