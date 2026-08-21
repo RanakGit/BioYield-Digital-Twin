@@ -7,7 +7,7 @@ from scipy.integrate import odeint
 from supabase import create_client, Client
 
 # Set page configuration
-st.set_page_config(page_title="BioYield Digital Twin", layout="wide")
+st.set_page_config(page_title="BioYield Digital Twin", layout="wide", initial_sidebar_state="expanded")
 
 # ---------------------------------------------------------
 # 1. SUPABASE AUTHENTICATION & SESSION SETUP
@@ -27,6 +27,9 @@ if "user" not in st.session_state:
 
 if "baseline_yield" not in st.session_state:
     st.session_state.baseline_yield = 5.0  # Default baseline yield (g/L)
+
+if "run_history" not in st.session_state:
+    st.session_state.run_history = []  # Holds saved runs for side-by-side comparison overlays
 
 # ---------------------------------------------------------
 # 2. OAUTH CALLBACK HANDLER & PKCE GUARD
@@ -106,10 +109,10 @@ if st.sidebar.button("Log Out"):
     st.session_state.user = None
     st.rerun()
 
-st.markdown("Real-time bioprocess simulation, rigorous stoichiometric balancing, and dynamic multi-variable optimization.")
+st.caption("Real-time bioprocess simulation, rigorous stoichiometric balancing, and dynamic multi-variable optimization.")
 
 # ---------------------------------------------------------
-# 4. SIDEBAR: ORGANIZED DATA INPUT & PRESETS
+# 4. SIDEBAR: ORGANIZED DATA INPUT & SCENARIO PRESETS
 # ---------------------------------------------------------
 st.sidebar.header("⚙️ Bioprocess Configuration")
 
@@ -118,29 +121,65 @@ preset = st.sidebar.selectbox(
     ["Custom", "Saccharomyces cerevisiae (Yeast)", "Escherichia coli (Recombinant)"]
 )
 
+# Preset Baseline Definitions
 if preset == "Saccharomyces cerevisiae (Yeast)":
-    default_mu_max, default_Ks, default_Yxs, default_S0 = 0.4, 0.2, 0.48, 50.0
+    default_mu_max, default_Ks, default_Yxs, default_Yps, default_S0, default_mode, default_D = 0.4, 0.2, 0.48, 0.15, 50.0, "Batch", 0.0
 elif preset == "Escherichia coli (Recombinant)":
-    default_mu_max, default_Ks, default_Yxs, default_S0 = 0.6, 0.05, 0.42, 30.0
+    default_mu_max, default_Ks, default_Yxs, default_Yps, default_S0, default_mode, default_D = 0.6, 0.05, 0.42, 0.20, 30.0, "Batch", 0.0
 else:
-    default_mu_max, default_Ks, default_Yxs, default_S0 = 0.35, 0.1, 0.40, 40.0
+    default_mu_max, default_Ks, default_Yxs, default_Yps, default_S0, default_mode, default_D = 0.35, 0.1, 0.40, 0.15, 40.0, "Batch", 0.0
 
-with st.sidebar.expander("🔬 Kinetic Parameters", expanded=True):
-    mu_max = st.slider("Max Specific Growth Rate (μ_max, 1/h)", 0.05, 1.0, default_mu_max, 0.01)
-    Ks = st.number_input("Monod Constant (Ks, g/L)", 0.01, 5.0, default_Ks, 0.05)
-    Y_xs = st.slider("Biomass Yield (Y_x/s, g/g)", 0.1, 0.8, default_Yxs, 0.02)
-    Y_ps = st.slider("Product Yield (Y_p/s, g/g)", 0.00, 0.6, 0.15, 0.02)
+# Quick Scenario Action Buttons
+st.sidebar.markdown("**⚡ Quick Test Scenarios**")
+sc_col1, sc_col2 = st.sidebar.columns(2)
+if sc_col1.button("🚀 High Yield", help="Set continuous mode at peak dilution productivity."):
+    default_mode, default_D, default_S0 = "Fed-Batch / Continuous (Chemostat)", 0.25, 60.0
+if sc_col2.button("⚠️ Washout", help="Set dilution rate above μ_max to demonstrate biomass washout."):
+    default_mode, default_D, default_S0 = "Fed-Batch / Continuous (Chemostat)", default_mu_max + 0.05, 40.0
 
-with st.sidebar.expander("🌡️ Operating Conditions", expanded=True):
-    mode = st.radio("Reactor Mode", ["Batch", "Fed-Batch / Continuous (Chemostat)"])
-    D = st.slider("Dilution Rate (D, 1/h)", 0.0, 0.8, 0.1 if mode != "Batch" else 0.0, 0.02)
-    S0 = st.number_input("Substrate Feed (S0, g/L)", 5.0, 200.0, default_S0, 5.0)
+with st.sidebar.expander("🔬 Biological Kinetic Parameters", expanded=True):
+    mu_max = st.slider(
+        "Max Growth Rate (μ_max, 1/h)", 0.05, 1.0, default_mu_max, 0.01,
+        help="Maximum specific growth rate under non-limiting substrate conditions."
+    )
+    Ks = st.number_input(
+        "Monod Constant (Ks, g/L)", 0.01, 5.0, default_Ks, 0.05,
+        help="Substrate affinity constant — lower values indicate higher affinity."
+    )
+    Y_xs = st.slider(
+        "Biomass Yield (Y_x/s, g/g)", 0.1, 0.8, default_Yxs, 0.02,
+        help="Grams of biomass produced per gram of substrate consumed."
+    )
+    Y_ps = st.slider(
+        "Product Yield (Y_p/s, g/g)", 0.00, 0.6, default_Yps, 0.02,
+        help="Grams of target product produced per gram of substrate consumed."
+    )
 
-# Input Validation Alerts
-if S0 > 150.0:
-    st.warning("⚠️ **High Substrate Concentration:** Concentrations above 150 g/L risk osmotic inhibition.")
-if mode != "Batch" and D >= mu_max:
-    st.error("🚨 **Washout Hazard:** Dilution rate ($D$) is equal to or higher than $\mu_{max}$. Biomass will wash out!")
+with st.sidebar.expander("🌡️ Reactor Operating Conditions", expanded=True):
+    mode = st.radio("Reactor Mode", ["Batch", "Fed-Batch / Continuous (Chemostat)"], index=0 if default_mode == "Batch" else 1)
+    
+    # Calculate critical dilution rate dynamically for real-time guardrails
+    S0_temp = default_S0
+    D_crit = mu_max * (S0_temp / (Ks + S0_temp))
+    
+    D = st.slider(
+        "Dilution Rate (D, 1/h)", 0.0, 0.8, default_D if mode != "Batch" else 0.0, 0.02,
+        help=f"Volumetric feed rate divided by reactor volume. Washout threshold D_crit ≈ {D_crit:.3f} h⁻¹."
+    )
+    S0 = st.number_input(
+        "Substrate Feed Concentration (S0, g/L)", 5.0, 200.0, default_S0, 5.0,
+        help="Concentration of substrate in the incoming feed stream."
+    )
+
+# Dynamic Operational Guardrails & Feedback Alerts
+if S0 > 100.0:
+    st.sidebar.warning(f"⚠️ **High Substrate (S0 = {S0:.0f} g/L):** Concentrations above 100 g/L risk osmotic stress or Luong/Haldane substrate inhibition.")
+
+if mode != "Batch":
+    if D >= mu_max:
+        st.sidebar.error(f"🚨 **CRITICAL WASHOUT:** Dilution rate ($D = {D:.2f}$) exceeds $\mu_{{max}} = {mu_max:.2f}$. Cells will be flushed out faster than they grow!")
+    elif D >= D_crit:
+        st.sidebar.warning(f"⚠️ **Near-Washout Zone:** $D$ ({D:.2f}) approaches critical rate ({D_crit:.2f} h⁻¹). Steady state biomass will drop sharply.")
 
 # ---------------------------------------------------------
 # 5. MAIN INTERFACE TABS
@@ -185,23 +224,52 @@ with tab1:
     col3.metric("Substrate Conversion", f"{((S0_init - df_sim['Substrate (S)'].iloc[-1])/S0_init)*100:.1f}%")
     col4.metric("Volumetric Productivity", f"{final_P/48:.3f} g/L·h")
 
-    if st.button("Save Current Product Yield as New Session Baseline"):
-        st.session_state.baseline_yield = final_P
-        st.success(f"Updated baseline yield to {final_P:.2f} g/L")
-        st.rerun()
+    # Action Toolbar: Save Baseline & Run History Management
+    b_col1, b_col2, b_col3 = st.columns([1.5, 1.5, 2])
+    with b_col1:
+        if st.button("📌 Set as Session Baseline", use_container_width=True):
+            st.session_state.baseline_yield = final_P
+            st.success(f"Updated baseline to {final_P:.2f} g/L")
+            st.rerun()
+    with b_col2:
+        if st.button("💾 Save Run Trajectory", use_container_width=True):
+            run_label = f"Run {len(st.session_state.run_history)+1} (P={final_P:.1f}g/L, D={D})"
+            st.session_state.run_history.append({"label": run_label, "data": df_sim.copy()})
+            st.toast(f"Saved {run_label} to overlay history!", icon="✅")
+    with b_col3:
+        if len(st.session_state.run_history) > 0 and st.button("🗑️ Clear Run Overlay History", use_container_width=True):
+            st.session_state.run_history = []
+            st.rerun()
 
+    # Dynamic Trajectory Chart with Overlay History
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df_sim["Time (h)"], y=df_sim["Biomass (X)"], mode='lines', name='Biomass X (g/L)', line=dict(color='#2ca02c', width=3)))
-    fig.add_trace(go.Scatter(x=df_sim["Time (h)"], y=df_sim["Substrate (S)"], mode='lines', name='Substrate S (g/L)', line=dict(color='#d62728', width=3, dash='dash')))
-    fig.add_trace(go.Scatter(x=df_sim["Time (h)"], y=df_sim["Product (P)"], mode='lines', name='Product P (g/L)', line=dict(color='#1f77b4', width=3)))
+    
+    # Active Run Traces
+    fig.add_trace(go.Scatter(x=df_sim["Time (h)"], y=df_sim["Biomass (X)"], mode='lines', name='Biomass X (Current)', line=dict(color='#2ca02c', width=3)))
+    fig.add_trace(go.Scatter(x=df_sim["Time (h)"], y=df_sim["Substrate (S)"], mode='lines', name='Substrate S (Current)', line=dict(color='#d62728', width=3, dash='dash')))
+    fig.add_trace(go.Scatter(x=df_sim["Time (h)"], y=df_sim["Product (P)"], mode='lines', name='Product P (Current)', line=dict(color='#1f77b4', width=3)))
+
+    # Historical Overlays
+    colors_p = ['#aec7e8', '#ffbb78', '#98df8a', '#ff9896', '#c5b0d5']
+    for idx, saved_run in enumerate(st.session_state.run_history[-5:]):  # Keep max 5 overlay traces
+        history_df = saved_run["data"]
+        color = colors_p[idx % len(colors_p)]
+        fig.add_trace(go.Scatter(
+            x=history_df["Time (h)"], 
+            y=history_df["Product (P)"], 
+            mode='lines', 
+            name=f"P ({saved_run['label']})", 
+            line=dict(color=color, width=2, dash='dot')
+        ))
 
     fig.update_layout(
-        title="State Trajectories over 48 Hours",
+        title="Dynamic State Trajectories (X, S, P) with Multi-Run Overlays",
         xaxis_title="Time (hours)",
         yaxis_title="Concentration (g/L)",
         hovermode="x unified",
         template="plotly_white",
-        height=450
+        height=480,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -209,8 +277,8 @@ with tab1:
 # TAB 2: FUNCTIONAL STOICHIOMETRIC MATRIX BALANCER
 # =========================================================
 with tab2:
-    st.subheader("Elemental Mass & Yield Limit Solver")
-    st.markdown("Solves elemental balance equations ($C, H, O, N$) to calculate **Theoretical Yield Limits ($Y_{x/s}^{max}$)**, **Oxygen Demand ($O_2$)**, and **$CO_2$ Generation**.")
+    st.subheader("Elemental Mass Balance & Carbon Partitioning")
+    st.markdown("Solves elemental balance equations ($C, H, O, N$) to calculate **Theoretical Yield Limits ($Y_{x/s}^{max}$)**, **Oxygen Demand ($O_2$)**, and **$CO_2$ Respiration**.")
 
     col_sub, col_bio, col_prod = st.columns(3)
     
@@ -232,20 +300,15 @@ with tab2:
     MW_Product = cp*12.011 + hp*1.008 + op*15.999 + np_val*14.007
 
     # C-mol fraction balance: 1 C-mol S -> Y_xs_cmol Biomass + Y_ps_cmol Product + Y_co2_cmol CO2
-    # Convert chosen mass yields back to C-mol yields
     Y_xs_cmol = Y_xs * (MW_Substrate / MW_Biomass)
     Y_ps_cmol = Y_ps * (MW_Substrate / MW_Product)
-    
-    # Balance carbon: 1 = Y_xs_cmol + Y_ps_cmol + Y_co2_cmol
     Y_co2_cmol = 1.0 - Y_xs_cmol - Y_ps_cmol
     
     # Calculate O2 requirement per C-mol substrate (Degree of Reduction Balance)
-    # gamma = 4C + H - 2O - 3N
     gamma_s = 4*cs + hs - 2*os - 3*ns
     gamma_x = 4*cx + hx - 2*ox - 3*nx
     gamma_p = 4*cp + hp - 2*op - 3*np_val
 
-    # O2 coefficient (moles O2 required per C-mol substrate metabolized)
     O2_demand_cmol = (gamma_s - (Y_xs_cmol * gamma_x) - (Y_ps_cmol * gamma_p)) / 4.0
 
     st.markdown("---")
@@ -256,11 +319,35 @@ with tab2:
     else:
         st.success(f"✓ **Stoichiometrically Valid Process:** Carbon allocation is {Y_xs_cmol*100:.1f}% Biomass, {Y_ps_cmol*100:.1f}% Product, and {Y_co2_cmol*100:.1f}% $CO_2$ respiration.")
 
+    # High-level Metrics
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Substrate C-mol Weight", f"{MW_Substrate:.2f} g/C-mol")
     m2.metric("Biomass C-mol Weight", f"{MW_Biomass:.2f} g/C-mol")
     m3.metric("Theoretical Max $Y_{x/s}$", f"{(MW_Biomass/MW_Substrate):.3f} g/g")
     m4.metric("Specific $O_2$ Demand", f"{max(0, O2_demand_cmol):.3f} mol O2/C-mol S")
+
+    # Visual Mass Balance Flow (Sankey Diagram)
+    if Y_co2_cmol >= 0:
+        st.markdown("#### Carbon Allocation Flow (Sankey Diagram)")
+        fig_sankey = go.Figure(data=[go.Sankey(
+            node=dict(
+                pad=20, thickness=25,
+                label=["Substrate Carbon (100%)", "Biomass (X)", "Product (P)", "Respiration (CO₂)"],
+                color=["#1f77b4", "#2ca02c", "#ff7f0e", "#d62728"]
+            ),
+            link=dict(
+                source=[0, 0, 0],
+                target=[1, 2, 3],
+                value=[Y_xs_cmol * 100, Y_ps_cmol * 100, max(0, Y_co2_cmol * 100)],
+                color=["rgba(44, 160, 44, 0.4)", "rgba(255, 127, 14, 0.4)", "rgba(214, 39, 40, 0.4)"]
+            )
+        )])
+        fig_sankey.update_layout(
+            height=320, 
+            margin=dict(l=10, r=10, t=20, b=10),
+            font=dict(size=13)
+        )
+        st.plotly_chart(fig_sankey, use_container_width=True)
 
 # =========================================================
 # TAB 3: REAL KINETIC SENSITIVITY & DYNAMIC OPTIMIZATION
