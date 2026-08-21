@@ -80,12 +80,20 @@ def fetch_user_history(user_id):
     except Exception as e:
         st.error(f"Error fetching simulation history: {e}")
         return pd.DataFrame()
+        
 
-# Initialize session state for auth and baselines
+# Session State Initialization
 if "user" not in st.session_state:
     st.session_state.user = None
-if "baseline_yield" not in st.session_state:
-    st.session_state.baseline_yield = None
+
+# Recover user session from Supabase SDK if returning from OAuth
+if st.session_state.user is None:
+    try:
+        session = supabase.auth.get_session()
+        if session and session.user:
+            st.session_state.user = session.user
+    except Exception:
+        pass
 
 # ---------------------------------------------------------
 # AUTHENTICATION SCREEN (Fixed Google OAuth Link)
