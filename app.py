@@ -43,7 +43,6 @@ if st.session_state.user is None and "code" in st.query_params:
         st.query_params.clear()
         st.rerun()
     except Exception:
-        # Fallback for Streamlit Cloud refresh verifier clearing
         st.query_params.clear()
 
 # Active Session Persistence Check
@@ -98,16 +97,16 @@ if st.session_state.user is None:
                 st.error(f"Error initiating Google Login: {e}")
 
     st.markdown("---")
-    st.stop()  # Halt execution until authenticated
+    st.stop()
 
-# Sidebar Logout once authenticated
+# Sidebar Logout
 user_email = getattr(st.session_state.user, 'email', 'Authenticated User')
 st.sidebar.write(f"Logged in as: **{user_email}**")
 if st.sidebar.button("Log Out"):
     st.session_state.user = None
     st.rerun()
 
-st.markdown("Real-time bioprocess simulation, stoichiometric balancing, and parameter optimization.")
+st.markdown("Real-time bioprocess simulation, rigorous stoichiometric balancing, and dynamic multi-variable optimization.")
 
 # ---------------------------------------------------------
 # 4. SIDEBAR: ORGANIZED DATA INPUT & PRESETS
@@ -120,40 +119,37 @@ preset = st.sidebar.selectbox(
 )
 
 if preset == "Saccharomyces cerevisiae (Yeast)":
-    default_mu_max, default_Ks, default_Yxs, default_S0 = 0.4, 0.2, 0.5, 50.0
+    default_mu_max, default_Ks, default_Yxs, default_S0 = 0.4, 0.2, 0.48, 50.0
 elif preset == "Escherichia coli (Recombinant)":
-    default_mu_max, default_Ks, default_Yxs, default_S0 = 0.6, 0.05, 0.45, 30.0
+    default_mu_max, default_Ks, default_Yxs, default_S0 = 0.6, 0.05, 0.42, 30.0
 else:
-    default_mu_max, default_Ks, default_Yxs, default_S0 = 0.35, 0.1, 0.4, 40.0
+    default_mu_max, default_Ks, default_Yxs, default_S0 = 0.35, 0.1, 0.40, 40.0
 
 with st.sidebar.expander("🔬 Kinetic Parameters", expanded=True):
     mu_max = st.slider("Max Specific Growth Rate (μ_max, 1/h)", 0.05, 1.0, default_mu_max, 0.01)
     Ks = st.number_input("Monod Constant (Ks, g/L)", 0.01, 5.0, default_Ks, 0.05)
     Y_xs = st.slider("Biomass Yield (Y_x/s, g/g)", 0.1, 0.8, default_Yxs, 0.02)
-    Y_ps = st.slider("Product Yield (Y_p/s, g/g)", 0.05, 0.6, 0.2, 0.02)
+    Y_ps = st.slider("Product Yield (Y_p/s, g/g)", 0.00, 0.6, 0.15, 0.02)
 
 with st.sidebar.expander("🌡️ Operating Conditions", expanded=True):
     mode = st.radio("Reactor Mode", ["Batch", "Fed-Batch / Continuous (Chemostat)"])
     D = st.slider("Dilution Rate (D, 1/h)", 0.0, 0.8, 0.1 if mode != "Batch" else 0.0, 0.02)
     S0 = st.number_input("Substrate Feed (S0, g/L)", 5.0, 200.0, default_S0, 5.0)
-    temp = st.slider("Temperature (°C)", 20, 45, 30)
-    ph = st.slider("pH Level", 4.0, 9.0, 6.8, 0.1)
-    agitation = st.slider("Agitation Speed (RPM)", 100, 1000, 400, 50)
 
 # Input Validation Alerts
 if S0 > 150.0:
-    st.warning("⚠️ **High Substrate Concentration:** Substrate levels above 150 g/L may trigger substrate inhibition (Haldane kinetics) or osmotic stress.")
+    st.warning("⚠️ **High Substrate Concentration:** Concentrations above 150 g/L risk osmotic inhibition.")
 if mode != "Batch" and D >= mu_max:
-    st.error("🚨 **Washout Risk:** Dilution rate (D) is greater than or equal to μ_max. Biomass will wash out of the reactor!")
+    st.error("🚨 **Washout Hazard:** Dilution rate ($D$) is equal to or higher than $\mu_{max}$. Biomass will wash out!")
 
 # ---------------------------------------------------------
 # 5. MAIN INTERFACE TABS
 # ---------------------------------------------------------
 tab1, tab2, tab3, tab4 = st.tabs([
     "📈 Dynamic Kinetics", 
-    "⚖️ Stoichiometry & Yields", 
-    "🗺️ Sensitivity & Optimization",
-    "📥 Batch Report & Export"
+    "⚖️ Stoichiometric Mass Balance", 
+    "🗺️ Dynamic Optimization Matrix",
+    "📥 Batch Report Export"
 ])
 
 # =========================================================
@@ -168,7 +164,7 @@ with tab1:
         dXdt = (mu - D) * X
         dSdt = D * (S0 - S) - (mu * X / Y_xs)
         dPdt = (Y_ps * mu * X) - (D * P)
-        return [max(0, dXdt), dSdt, max(0, dPdt)]
+        return [max(0, dXdt), max(0, dSdt), max(0, dPdt)]
 
     X0, S0_init, P0 = 0.5, S0 if mode == "Batch" else S0/2, 0.0
     t = np.linspace(0, 48, 200)
@@ -180,7 +176,6 @@ with tab1:
     final_X = df_sim["Biomass (X)"].iloc[-1]
     final_P = df_sim["Product (P)"].iloc[-1]
     
-    # Calculate percentage change against session state baseline yield
     baseline_P = st.session_state.baseline_yield
     delta_p = ((final_P - baseline_P) / baseline_P) * 100 if baseline_P > 0 else 0.0
 
@@ -195,14 +190,13 @@ with tab1:
         st.success(f"Updated baseline yield to {final_P:.2f} g/L")
         st.rerun()
 
-    # Plotly Interactive Chart
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df_sim["Time (h)"], y=df_sim["Biomass (X)"], mode='lines', name='Biomass X (g/L)', line=dict(color='#2ca02c', width=3)))
     fig.add_trace(go.Scatter(x=df_sim["Time (h)"], y=df_sim["Substrate (S)"], mode='lines', name='Substrate S (g/L)', line=dict(color='#d62728', width=3, dash='dash')))
     fig.add_trace(go.Scatter(x=df_sim["Time (h)"], y=df_sim["Product (P)"], mode='lines', name='Product P (g/L)', line=dict(color='#1f77b4', width=3)))
 
     fig.update_layout(
-        title="Real-Time State Trajectories over 48 Hours",
+        title="State Trajectories over 48 Hours",
         xaxis_title="Time (hours)",
         yaxis_title="Concentration (g/L)",
         hovermode="x unified",
@@ -212,80 +206,109 @@ with tab1:
     st.plotly_chart(fig, use_container_width=True)
 
 # =========================================================
-# TAB 2: YIELD & STOICHIOMETRIC BALANCE CALCULATOR
+# TAB 2: FUNCTIONAL STOICHIOMETRIC MATRIX BALANCER
 # =========================================================
 with tab2:
-    st.subheader("Elemental & Stoichiometric Mass Balance")
-    st.markdown("Calculates theoretical yield limits based on elemental chemical formulas ($CH_aO_bN_c$).")
+    st.subheader("Elemental Mass & Yield Limit Solver")
+    st.markdown("Solves elemental balance equations ($C, H, O, N$) to calculate **Theoretical Yield Limits ($Y_{x/s}^{max}$)**, **Oxygen Demand ($O_2$)**, and **$CO_2$ Generation**.")
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.write("**Substrate Formula (e.g., Glucose: $CH_2O$)**")
-        c_s = st.number_input("C (Substrate)", value=1.0)
-        h_s = st.number_input("H (Substrate)", value=2.0)
-        o_s = st.number_input("O (Substrate)", value=1.0)
-        n_s = st.number_input("N (Substrate)", value=0.0)
+    col_sub, col_bio, col_prod = st.columns(3)
+    
+    with col_sub:
+        st.markdown("**Substrate ($CH_aO_bN_c$)**")
+        cs, hs, os, ns = 1.0, st.number_input("H (Substrate)", value=2.0, key="hs"), st.number_input("O (Substrate)", value=1.0, key="os"), st.number_input("N (Substrate)", value=0.0, key="ns")
+    
+    with col_bio:
+        st.markdown("**Biomass ($CH_dO_eN_f$)**")
+        cx, hx, ox, nx = 1.0, st.number_input("H (Biomass)", value=1.8, key="hx"), st.number_input("O (Biomass)", value=0.5, key="ox"), st.number_input("N (Biomass)", value=0.2, key="nx")
 
-    with c2:
-        st.write("**Biomass Formula (e.g., Dry Cell Weight: $CH_{1.8}O_{0.5}N_{0.2}$)**")
-        c_x = st.number_input("C (Biomass)", value=1.0)
-        h_x = st.number_input("H (Biomass)", value=1.8)
-        o_x = st.number_input("O (Biomass)", value=0.5)
-        n_x = st.number_input("N (Biomass)", value=0.2)
+    with col_prod:
+        st.markdown("**Product ($CH_gO_hN_i$)**")
+        cp, hp, op, np_val = 1.0, st.number_input("H (Product)", value=3.0, key="hp"), st.number_input("O (Product)", value=1.0, key="op"), st.number_input("N (Product)", value=0.0, key="np")
 
-    MW_S = c_s*12.011 + h_s*1.008 + o_s*15.999 + n_s*14.007
-    MW_X = c_x*12.011 + h_x*1.008 + o_x*15.999 + n_x*14.007
+    # Calculate C-mol Molecular Weights
+    MW_Substrate = cs*12.011 + hs*1.008 + os*15.999 + ns*14.007
+    MW_Biomass = cx*12.011 + hx*1.008 + ox*15.999 + nx*14.007
+    MW_Product = cp*12.011 + hp*1.008 + op*15.999 + np_val*14.007
 
-    max_Y_xs_mol = c_x / c_s
-    max_Y_xs_mass = max_Y_xs_mol * (MW_X / MW_S)
+    # C-mol fraction balance: 1 C-mol S -> Y_xs_cmol Biomass + Y_ps_cmol Product + Y_co2_cmol CO2
+    # Convert chosen mass yields back to C-mol yields
+    Y_xs_cmol = Y_xs * (MW_Substrate / MW_Biomass)
+    Y_ps_cmol = Y_ps * (MW_Substrate / MW_Product)
+    
+    # Balance carbon: 1 = Y_xs_cmol + Y_ps_cmol + Y_co2_cmol
+    Y_co2_cmol = 1.0 - Y_xs_cmol - Y_ps_cmol
+    
+    # Calculate O2 requirement per C-mol substrate (Degree of Reduction Balance)
+    # gamma = 4C + H - 2O - 3N
+    gamma_s = 4*cs + hs - 2*os - 3*ns
+    gamma_x = 4*cx + hx - 2*ox - 3*nx
+    gamma_p = 4*cp + hp - 2*op - 3*np_val
+
+    # O2 coefficient (moles O2 required per C-mol substrate metabolized)
+    O2_demand_cmol = (gamma_s - (Y_xs_cmol * gamma_x) - (Y_ps_cmol * gamma_p)) / 4.0
 
     st.markdown("---")
-    res_col1, res_col2, res_col3 = st.columns(3)
-    res_col1.metric("Substrate Mol. Weight", f"{MW_S:.2f} g/C-mol")
-    res_col2.metric("Biomass Mol. Weight", f"{MW_X:.2f} g/C-mol")
-    res_col3.metric("Max Theoretical Y_x/s Limit", f"{max_Y_xs_mass:.3f} g/g")
+    
+    # Check thermodynamic feasibility
+    if Y_co2_cmol < 0:
+        st.error(f"🚨 **Thermodynamically Impossible Configuration!** The combined Biomass ($Y_{{x/s}}={Y_xs}$) and Product ($Y_{{p/s}}={Y_ps}$) yields consume **{Y_xs_cmol + Y_ps_cmol:.2f} C-moles** per C-mole substrate. Maximum available carbon is **1.0 C-mole**.")
+    else:
+        st.success(f"✓ **Stoichiometrically Valid Process:** Carbon allocation is {Y_xs_cmol*100:.1f}% Biomass, {Y_ps_cmol*100:.1f}% Product, and {Y_co2_cmol*100:.1f}% $CO_2$ respiration.")
 
-    if Y_xs > max_Y_xs_mass:
-        st.error(f"⚠️ Selected Yield ($Y_{{x/s}} = {Y_xs}$) exceeds stoichiometric limit ($^{{max}}Y_{{x/s}} = {max_Y_xs_mass:.3f}$)! Adjust yield parameters.")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Substrate C-mol Weight", f"{MW_Substrate:.2f} g/C-mol")
+    m2.metric("Biomass C-mol Weight", f"{MW_Biomass:.2f} g/C-mol")
+    m3.metric("Theoretical Max $Y_{x/s}$", f"{(MW_Biomass/MW_Substrate):.3f} g/g")
+    m4.metric("Specific $O_2$ Demand", f"{max(0, O2_demand_cmol):.3f} mol O2/C-mol S")
 
 # =========================================================
-# TAB 3: SENSITIVITY & TRADE-OFF MATRIX
+# TAB 3: REAL KINETIC SENSITIVITY & DYNAMIC OPTIMIZATION
 # =========================================================
 with tab3:
-    st.subheader("Process Sensitivity Heatmap")
-    st.markdown("Simulates trade-offs between **Agitation (RPM)**, **Temperature (°C)**, Yield, and estimated **Energy Cost**.")
+    st.subheader("ODE Parameter Sweep Matrix")
+    st.markdown("Runs full 2D differential simulations across dilution rates ($D$) and substrate feed concentrations ($S_0$) to map true steady-state volumetric productivity ($g/L \cdot h$).")
 
-    temps = np.linspace(25, 42, 10)
-    agitations = np.linspace(200, 800, 10)
-    T_grid, A_grid = np.meshgrid(temps, agitations)
+    d_range = np.linspace(0.02, min(0.75, mu_max * 1.1), 15)
+    s0_range = np.linspace(10.0, 100.0, 15)
+    
+    productivity_matrix = np.zeros((len(s0_range), len(d_range)))
+    
+    # Run dynamic sweeps
+    for i, s0_val in enumerate(s0_range):
+        for j, d_val in enumerate(d_range):
+            if d_val >= mu_max:
+                productivity_matrix[i, j] = 0.0  # Washout state
+            else:
+                # Analytical steady state for chemostat
+                S_ss = (Ks * d_val) / (mu_max - d_val) if (mu_max - d_val) > 0 else s0_val
+                if S_ss < s0_val:
+                    X_ss = Y_xs * (s0_val - S_ss)
+                    P_ss = Y_ps * (s0_val - S_ss)
+                    productivity_matrix[i, j] = P_ss * d_val  # Volumetric productivity: P * D
+                else:
+                    productivity_matrix[i, j] = 0.0
 
-    Yield_matrix = Y_xs * np.exp(-((T_grid - 32)**2)/50) * (1 - np.exp(-A_grid/300))
-    Power_cost_matrix = (A_grid / 400)**3 * 1.5 + (T_grid - 25)*0.1
+    fig_heat = go.Figure(data=go.Contour(
+        z=productivity_matrix,
+        x=np.round(d_range, 3),
+        y=np.round(s0_range, 1),
+        colorscale='Viridis',
+        colorbar=dict(title='Productivity (g/L·h)'),
+        contours=dict(showlabels=True, labelfont=dict(color='white'))
+    ))
 
-    plot_type = st.radio("Select Response Surface Metric:", ["Biomass Yield (g/g)", "Energy Cost Index (kW)"])
-
-    if plot_type == "Biomass Yield (g/g)":
-        fig_heat = px.imshow(
-            Yield_matrix, 
-            x=np.round(temps, 1), 
-            y=np.round(agitations, 0),
-            labels=dict(x="Temperature (°C)", y="Agitation (RPM)", color="Yield (g/g)"),
-            color_continuous_scale="Viridis"
-        )
-    else:
-        fig_heat = px.imshow(
-            Power_cost_matrix, 
-            x=np.round(temps, 1), 
-            y=np.round(agitations, 0),
-            labels=dict(x="Temperature (°C)", y="Agitation (RPM)", color="Power Index"),
-            color_continuous_scale="Plasma"
-        )
-
-    fig_heat.update_layout(height=450, template="plotly_white")
+    fig_heat.update_layout(
+        title="Volumetric Product Productivity Surface (D vs Substrate Feed S0)",
+        xaxis_title="Dilution Rate D (1/h)",
+        yaxis_title="Substrate Feed S0 (g/L)",
+        height=500,
+        template="plotly_white"
+    )
     st.plotly_chart(fig_heat, use_container_width=True)
 
 # =========================================================
-# TAB 4: BATCH REPORT & EXPORT
+# TAB 4: BATCH REPORT EXPORT
 # =========================================================
 with tab4:
     st.subheader("Export Run Data & Parameters")
