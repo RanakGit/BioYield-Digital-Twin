@@ -74,7 +74,7 @@ def init_supabase() -> Client:
     )
 
 # ---------------------------------------------------------
-# Session State & OAuth Callback Handler
+# Session State & Robust OAuth Callback Handler
 # ---------------------------------------------------------
 if "user" not in st.session_state:
     st.session_state.user = None
@@ -82,22 +82,20 @@ if "user" not in st.session_state:
 if "baseline_yield" not in st.session_state:
     st.session_state.baseline_yield = None
 
-# 1. Check if returning from Google with a code in query params
-query_params = st.query_params
-if "code" in query_params:
-    auth_code = query_params["code"]
+# Check for 'code' query parameter returned from Google OAuth
+if st.session_state.user is None and "code" in st.query_params:
+    auth_code = st.query_params["code"]
     try:
-        # Exchange the authorization code for a Supabase session
+        # Exchange authorization code for active session
         res = supabase.auth.exchange_code_for_session({"auth_code": auth_code})
         if res and res.user:
             st.session_state.user = res.user
-            # Clear query parameters from URL for clean navigation
             st.query_params.clear()
             st.rerun()
     except Exception as e:
-        st.error(f"Failed to complete OAuth handshake: {e}")
+        st.error(f"Authentication exchange error: {e}")
 
-# 2. Fallback session recovery from Supabase client
+# Fallback session check
 if st.session_state.user is None:
     try:
         session = supabase.auth.get_session()
@@ -105,7 +103,6 @@ if st.session_state.user is None:
             st.session_state.user = session.user
     except Exception:
         pass
-
 # ---------------------------------------------------------
 # AUTHENTICATION SCREEN
 # ---------------------------------------------------------
