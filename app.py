@@ -88,7 +88,7 @@ if "baseline_yield" not in st.session_state:
     st.session_state.baseline_yield = None
 
 # ---------------------------------------------------------
-# AUTHENTICATION SCREEN (Google OAuth Enabled)
+# AUTHENTICATION SCREEN (Fixed Google OAuth Link)
 # ---------------------------------------------------------
 def render_auth_ui():
     st.markdown("<h2 style='text-align: center;'>🧪 BioYield-Predict</h2>", unsafe_allow_html=True)
@@ -123,30 +123,25 @@ def render_auth_ui():
                     
         st.divider()
         
-        if st.button("🌐 Continue with Google", use_container_width=True):
-            try:
-                res = supabase.auth.sign_in_with_oauth({
-                    "provider": "google",
-                    "options": {"redirect_to": st.secrets["supabase"].get("REDIRECT_URL", "http://localhost:8501")}
-                })
-                st.info("Redirecting to Google authentication...")
-            except Exception as e:
-                st.error(f"OAuth error: {e}")
+        # Get redirect target (http://localhost:8501)
+        redirect_target = st.secrets["supabase"].get("REDIRECT_URL", "http://localhost:8501")
+
+        # Generate Google OAuth authorization URL directly
+        try:
+            auth_response = supabase.auth.sign_in_with_oauth({
+                "provider": "google",
+                "options": {"redirect_to": redirect_target}
+            })
+            
+            # Use Streamlit's native link_button so the browser navigates immediately
+            if hasattr(auth_response, 'url') and auth_response.url:
+                st.link_button("🌐 Continue with Google", auth_response.url, use_container_width=True)
+            else:
+                st.error("Could not fetch Google login URL. Check Supabase settings.")
+        except Exception as e:
+            st.error(f"OAuth initialization error: {e}")
                 
         st.markdown('</div>', unsafe_allow_html=True)
-
-# Main Auth Gate
-if st.session_state.user is None:
-    render_auth_ui()
-    st.stop()
-
-# Logout Option in Sidebar
-with st.sidebar:
-    st.markdown(f"**Logged in as:** `{st.session_state.user.email}`")
-    if st.button("🚪 Sign Out", use_container_width=True):
-        supabase.auth.sign_out()
-        st.session_state.user = None
-        st.rerun()
 
 # ---------------------------------------------------------
 # 1. Asset & Model Loaders
