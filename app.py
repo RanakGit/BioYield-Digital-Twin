@@ -84,7 +84,7 @@ def fetch_user_history(user_id):
         return pd.DataFrame()
 
 # ---------------------------------------------------------
-# Session State & Parameter Reset Logic
+# Session State & OAuth Callback Handler
 # ---------------------------------------------------------
 if "user" not in st.session_state:
     st.session_state.user = None
@@ -92,7 +92,22 @@ if "user" not in st.session_state:
 if "baseline_yield" not in st.session_state:
     st.session_state.baseline_yield = None
 
-# Recover user session from Supabase SDK if returning from OAuth
+# 1. Check if returning from Google with a code in query params
+query_params = st.query_params
+if "code" in query_params:
+    auth_code = query_params["code"]
+    try:
+        # Exchange the authorization code for a Supabase session
+        res = supabase.auth.exchange_code_for_session({"auth_code": auth_code})
+        if res and res.user:
+            st.session_state.user = res.user
+            # Clear query parameters from URL for clean navigation
+            st.query_params.clear()
+            st.rerun()
+    except Exception as e:
+        st.error(f"Failed to complete OAuth handshake: {e}")
+
+# 2. Fallback session recovery from Supabase client
 if st.session_state.user is None:
     try:
         session = supabase.auth.get_session()
@@ -100,28 +115,6 @@ if st.session_state.user is None:
             st.session_state.user = session.user
     except Exception:
         pass
-
-# Default parameters reset dictionary
-DEFAULT_PARAMS = {
-    "initial_S0": 35.0,
-    "initial_X0": 0.25,
-    "min_pH": 5.5,
-    "sim_time": 24,
-    "Y_px_kinetic": 0.20,
-    "mu_max": 0.40,
-    "Ks": 0.50,
-    "Y_xs": 0.50,
-}
-
-# Initialize sidebar inputs in session state if not already set
-for key, val in DEFAULT_PARAMS.items():
-    if key not in st.session_state:
-        st.session_state[key] = val
-
-def reset_parameters():
-    for key, val in DEFAULT_PARAMS.items():
-        st.session_state[key] = val
-    st.toast("🔄 Parameters reset to default values!", icon="⚙️")
 
 # ---------------------------------------------------------
 # AUTHENTICATION SCREEN
