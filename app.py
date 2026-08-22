@@ -179,35 +179,40 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. AUTHENTICATION & SECURE DATABASE
+# 2. AUTHENTICATION & SELF-HEALING DATABASE
 # ==========================================
-def init_user_db():
-    conn = sqlite3.connect("fermentiq_users.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            facility TEXT NOT NULL,
-            password_hash TEXT NOT NULL,
-            salt TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    # Migration helper: ensure facility column exists if an older DB version is cached
-    cursor.execute("PRAGMA table_info(users)")
-    columns = [col[1] for col in cursor.fetchall()]
-    if "facility" not in columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN facility TEXT DEFAULT 'Default Facility'")
+def get_db_connection():
+    return sqlite3.connect("fermentiq_users.db")
 
-    cursor.execute("SELECT id FROM users WHERE username = ?", ("demo",))
-    if not cursor.fetchone():
-        salt = secrets.token_bytes(16).hex()
-        pwd_hash = hashlib.pbkdf2_hmac('sha256', "demo123".encode('utf-8'), bytes.fromhex(salt), 100000).hex()
-        cursor.execute("INSERT OR IGNORE INTO users (username, facility, password_hash, salt) VALUES (?, ?, ?, ?)",
-                       ("demo", "FermentIQ Enterprise Lab", pwd_hash, salt))
-    conn.commit()
-    conn.close()
+def init_user_db():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                facility TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                salt TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("PRAGMA table_info(users)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if "facility" not in columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN facility TEXT DEFAULT 'Default Facility'")
+
+        cursor.execute("SELECT id FROM users WHERE username = ?", ("demo",))
+        if not cursor.fetchone():
+            salt = secrets.token_bytes(16).hex()
+            pwd_hash = hashlib.pbkdf2_hmac('sha256', "demo123".encode('utf-8'), bytes.fromhex(salt), 100000).hex()
+            cursor.execute("INSERT OR IGNORE INTO users (username, facility, password_hash, salt) VALUES (?, ?, ?, ?)",
+                           ("demo", "FermentIQ Enterprise Lab", pwd_hash, salt))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 def hash_password(password: str, salt: str = None) -> tuple[str, str]:
     if salt is None:
@@ -218,32 +223,39 @@ def hash_password(password: str, salt: str = None) -> tuple[str, str]:
 def register_user(username: str, facility: str, password: str) -> tuple[bool, str]:
     if not username.strip() or not password.strip():
         return False, "Username and password cannot be empty."
-    conn = sqlite3.connect("fermentiq_users.db")
-    cursor = conn.cursor()
     try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
         pwd_hash, salt = hash_password(password)
         cursor.execute("INSERT INTO users (username, facility, password_hash, salt) VALUES (?, ?, ?, ?)",
                        (username.strip().lower(), facility.strip(), pwd_hash, salt))
         conn.commit()
         conn.close()
         return True, "Account created successfully! Switch to Log In."
+    except sqlite3.OperationalError:
+        init_user_db()
+        return register_user(username, facility, password)
     except sqlite3.IntegrityError:
-        conn.close()
         return False, "Username already exists."
 
 def authenticate_user(username: str, password: str) -> tuple[bool, str, str]:
-    conn = sqlite3.connect("fermentiq_users.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT facility, password_hash, salt FROM users WHERE username = ?", (username.strip().lower(),))
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        facility, stored_hash, salt = row
-        pwd_hash, _ = hash_password(password, salt)
-        if hmac.compare_digest(pwd_hash, stored_hash):
-            return True, facility, "Login successful!"
-        return False, "", "Incorrect password."
-    return False, "", "Username not found."
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT facility, password_hash, salt FROM users WHERE username = ?", (username.strip().lower(),))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            facility, stored_hash, salt = row
+            pwd_hash, _ = hash_password(password, salt)
+            if hmac.compare_digest(pwd_hash, stored_hash):
+                return True, facility, "Login successful!"
+            return False, "", "Incorrect password."
+        return False, "", "Username not found."
+    except sqlite3.OperationalError:
+        # Self-healing fallback if table or schema is out of sync
+        init_user_db()
+        return authenticate_user(username, password)
 
 init_user_db()
 
