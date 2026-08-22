@@ -9,7 +9,7 @@ import datetime
 import html
 
 # ==========================================
-# 1. PAGE & STYLING CONFIGURATION
+# 1. PAGE & THEME-AWARE STYLING CONFIGURATION
 # ==========================================
 st.set_page_config(
     page_title="BioTwin Pro | Enterprise Bioprocess Digital Twin",
@@ -18,84 +18,74 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom High-End SaaS UI Injection
+# Custom Theme-Aware SaaS UI Injection
 st.markdown("""
 <style>
-    /* CSS Variables & Palette */
-    :root {
-        --bg-main: #0F172A;
-        --card-bg: #1E293B;
-        --accent-emerald: #10B981;
-        --accent-cyan: #06B6D4;
-        --accent-rose: #F43F5E;
-        --text-primary: #F8FAFC;
-        --text-muted: #94A3B8;
-        --border-color: #334155;
-    }
-
-    /* Main Container Adjustments */
+    /* Theme-aware CSS utilizing Streamlit native variables */
     .stApp {
-        background-color: var(--bg-main);
-        color: var(--text-primary);
         font-family: 'Inter', system-ui, -apple-system, sans-serif;
     }
 
-    /* Custom Glassmorphism Metric Cards */
+    /* Glassmorphism Metric Cards - Works in Light & Dark Mode */
     .metric-card {
-        background: rgba(30, 41, 59, 0.7);
-        backdrop-filter: blur(8px);
-        border: 1px solid var(--border-color);
+        background-color: var(--secondary-background-color);
+        border: 1px solid rgba(128, 128, 128, 0.2);
         border-radius: 12px;
         padding: 18px 22px;
         margin-bottom: 12px;
-        transition: transform 0.2s ease, border-color 0.2s ease;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     }
+    
     .metric-card:hover {
         transform: translateY(-2px);
-        border-color: var(--accent-cyan);
+        border-color: #06B6D4;
+        box-shadow: 0 10px 15px -3px rgba(6, 182, 212, 0.15);
     }
+    
     .metric-label {
         font-size: 0.82rem;
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.05em;
-        color: var(--text-muted);
+        color: var(--text-color);
+        opacity: 0.7;
         margin-bottom: 4px;
     }
+    
     .metric-value {
         font-size: 1.6rem;
         font-weight: 700;
-        color: var(--text-primary);
+        color: var(--text-color);
     }
+    
     .metric-sub {
         font-size: 0.75rem;
-        color: var(--accent-emerald);
-        font-weight: 500;
+        color: #10B981;
+        font-weight: 600;
     }
 
-    /* Sidebar Styling */
-    section[data-testid="stSidebar"] {
-        background-color: #0B1120;
-        border-right: 1px solid var(--border-color);
-    }
-
-    /* Tab Header Customization */
+    /* Tab Customization Adapts to Light/Dark Mode */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
-        border-bottom: 1px solid var(--border-color);
+        border-bottom: 1px solid rgba(128, 128, 128, 0.2);
     }
+    
     .stTabs [data-baseweb="tab"] {
         height: 48px;
         border-radius: 8px 8px 0 0;
         padding: 0 20px;
         font-weight: 600;
-        color: var(--text-muted);
+        color: var(--text-color);
+        opacity: 0.7;
         background-color: transparent;
     }
+    
     .stTabs [aria-selected="true"] {
-        color: var(--accent-cyan) !important;
-        border-bottom: 3px solid var(--accent-cyan) !important;
-        background: rgba(6, 182, 212, 0.05);
+        color: #06B6D4 !important;
+        opacity: 1.0 !important;
+        border-bottom: 3px solid #06B6D4 !important;
+        background: rgba(6, 182, 212, 0.08);
     }
 
     /* Print / PDF Mode Helper */
@@ -110,7 +100,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
 
 # ==========================================
 # 2. NUMERICAL KINETIC MODEL ENGINE
