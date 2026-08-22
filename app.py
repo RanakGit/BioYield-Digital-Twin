@@ -117,18 +117,29 @@ if 'authenticated' not in st.session_state:
 
 if not st.session_state['authenticated']:
     st.markdown("## 🧬 BioTwin Pro Enterprise Login")
+    
     col_a, col_b = st.columns([1, 2])
     with col_a:
-        tenant_key = st.text_input("Enterprise License Key / API Token", type="password")
-        organization = st.text_input("Organization / Facility ID", "BioProcess Corp Alpha")
-        if st.button("Authenticate Workspace", use_container_width=True):
-            if tenant_key == "biotwin_enterprise_secret_key" or tenant_key == "demo":
-                st.session_state['authenticated'] = True
-                st.session_state['org'] = organization
-                st.success("Authorized! Loading Digital Twin Workspace...")
-                st.rerun()
-            else:
-                st.error("Invalid Enterprise Token.")
+        # Using a form prevents Streamlit from refreshing mid-typing
+        with st.form("login_form"):
+            tenant_key = st.text_input("Enterprise License Key / API Token", type="password")
+            organization = st.text_input("Organization / Facility ID", "BioProcess Corp Alpha")
+            submit_button = st.form_submit_button("Authenticate Workspace", use_container_width=True)
+            
+            if submit_button:
+                # .strip() removes any accidental trailing/leading spaces
+                clean_key = tenant_key.strip()
+                
+                VALID_KEYS = ["demo", "biotwin_enterprise_secret_key", "admin"]
+                
+                if clean_key in VALID_KEYS:
+                    st.session_state['authenticated'] = True
+                    st.session_state['org'] = organization.strip()
+                    st.success("Authorized! Loading Digital Twin Workspace...")
+                    st.rerun()
+                else:
+                    st.error("Invalid Enterprise Token. Try 'demo' or 'admin'.")
+                    
     st.stop()
 
 # ==========================================
