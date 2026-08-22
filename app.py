@@ -483,7 +483,7 @@ if 'Time' in exp_df.columns and 'Biomass' in exp_df.columns:
                 st.success(f"Updated μ_max to {fitted_mu:.4f} h⁻¹!")
                 st.rerun()
 
-        # Visual Fit Plot with Forced High-Contrast Styling
+       # Plot regression curve vs points
         fig_fit = go.Figure()
         
         fig_fit.add_trace(go.Scatter(
@@ -501,33 +501,24 @@ if 'Time' in exp_df.columns and 'Biomass' in exp_df.columns:
             line=dict(color='#0D9488', width=2.5, dash='dash')
         ))
         
-        # Explicit Font & Axis Color Overrides for High Legibility
+        # Native Theme-Adaptive Layout (No hardcoded font colors!)
         fig_fit.update_layout(
-            template="plotly_white",
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
+            template="none",  # Inherits Streamlit's theme defaults
             height=380,
-            title=dict(
-                text="<b>Experimental Biomass Points vs. Regression Model</b>",
-                font=dict(color="#0F172A", size=15)
-            ),
-            font=dict(color="#0F172A", family="Inter"),
+            margin=dict(l=10, r=10, t=40, b=10),
+            title=dict(text="<b>Experimental Biomass Points vs. Regression Model</b>"),
             legend=dict(
-                font=dict(color="#0F172A", size=12),
                 orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-            )
+            ),
+            hovermode="x unified"
         )
         
-        grid_style = dict(showgrid=True, gridcolor="rgba(100, 100, 100, 0.15)", tickfont=dict(color="#0F172A"))
-        fig_fit.update_xaxes(title=dict(text="<b>Time (Hours)</b>", font=dict(color="#0F172A")), **grid_style)
-        fig_fit.update_yaxes(title=dict(text="<b>Biomass Concentration (g/L)</b>", font=dict(color="#0F172A")), **grid_style)
+        # Gridlines adapt automatically using alpha channel
+        grid_style = dict(showgrid=True, gridcolor="rgba(128, 128, 128, 0.2)")
+        fig_fit.update_xaxes(title_text="<b>Time (Hours)</b>", **grid_style)
+        fig_fit.update_yaxes(title_text="<b>Biomass Concentration (g/L)</b>", **grid_style)
 
         st.plotly_chart(fig_fit, use_container_width=True)
-
-    except Exception as e:
-        st.error(f"Regression error: {str(e)}")
-else:
-    st.warning("⚠️ Column headers missing! Data must contain 'Time' and 'Biomass' headers.")
 
 
 # ------------------------------------------
