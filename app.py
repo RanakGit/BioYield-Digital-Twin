@@ -368,8 +368,17 @@ with st.sidebar:
     st.caption(f"Facility: **{st.session_state.get('org', 'Default Facility')}**")
     st.caption(f"User Role: **{st.session_state.get('user_role', 'Engineer')}**")
     
-    preset_choice = st.selectbox("Active Strain Profile", list(ORGANISM_PRESETS.keys()))
-    preset = ORGANISM_PRESETS[preset_choice]
+    # --- CUSTOM STRAIN & ENTERPRISE OVERRIDE ---
+    use_custom_strain = st.checkbox("✍️ Enter Custom Strain / Lot ID", value=False)
+    
+    if use_custom_strain:
+        custom_strain_name = st.text_input("Custom Organism / Strain Name", "Pichia pastoris Mut+")
+        custom_strain_id = st.text_input("Batch / Lot ID", "LOT-2026-B01")
+        preset_choice = f"{custom_strain_name} ({custom_strain_id})"
+        preset = ORGANISM_PRESETS["E. coli Recombinant Protein"]  # Default baseline parameters for tuning
+    else:
+        preset_choice = st.selectbox("Active Strain Profile", list(ORGANISM_PRESETS.keys()))
+        preset = ORGANISM_PRESETS[preset_choice]
 
     st.markdown("---")
     st.markdown("#### Kinetic Parameters")
