@@ -355,18 +355,11 @@ with st.sidebar:
         custom_strain_id = st.text_input("Batch / Lot ID", "LOT-2026-0822-X")
         custom_target_product = st.text_input("Target Molecule / Product", "Therapeutic Protein B")
         preset_choice = f"{custom_strain_name} ({custom_strain_id})"
-        preset = ORGANISM_PRESETS["E. coli Recombinant Protein"]  # Default base baseline parameters
+        preset = ORGANISM_PRESETS["E. coli Recombinant Protein"]  # Default baseline parameters
     else:
         preset_choice = st.selectbox("Active Strain Profile", list(ORGANISM_PRESETS.keys()))
         preset = ORGANISM_PRESETS[preset_choice]
         custom_target_product = "Target Biomaterial / Recombinant Product"
-}
-
-with st.sidebar:
-    st.markdown("### ⚙️ Enterprise Twin Config")
-    st.caption(f"Connected Facility: **{st.session_state.get('org', 'Default Facility')}**")
-    preset_choice = st.selectbox("Active Strain Profile", list(ORGANISM_PRESETS.keys()))
-    preset = ORGANISM_PRESETS[preset_choice]
 
     st.markdown("---")
     st.markdown("#### Kinetic Parameters")
@@ -406,7 +399,6 @@ with st.sidebar:
     kla = st.slider("kL a (1/h)", 5.0, 500.0, float(preset["kla"]))
     batch_time = st.slider("Batch Duration (Hours)", 4.0, 200.0, float(preset["batch_time"]), 1.0)
     alpha, beta = preset["alpha"], preset["beta"]
-
 # ==========================================
 # 5. SIMULATION & METRICS EXECUTION
 # ==========================================
