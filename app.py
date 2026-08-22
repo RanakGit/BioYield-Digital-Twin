@@ -658,4 +658,4 @@ with tab_report:
         </div>
     </div>
     """
-    st.markdown(report_html, unsafe_allow_html=True)
+    st.components.v1.html(report_html, height=520, scrolling=True)
