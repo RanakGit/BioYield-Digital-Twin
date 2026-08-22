@@ -270,7 +270,7 @@ def run_v4_simulation(X0, S0, P0, A0, DO0, V0, mu_max, Ks, Ki, Y_xs, Y_ps, alpha
         return pd.DataFrame(), False
 
 # --- EXTENDED KALMAN FILTER (EKF) FOR SENSOR TELEMETRY ---
-def run_extended_kalman_filter(time_pts, noisy_biomass, noisy_DO, q_noise=0.01, r_noise=0.15):
+def run_extended_kalman_filter(time_pts, noisy_biomass, noisy_DO=None, q_noise=0.01, r_noise=0.15):
     """
     EKF State Estimator: Filters sensor noise and estimates hidden substrate state S(t)
     """
@@ -283,30 +283,40 @@ def run_extended_kalman_filter(time_pts, noisy_biomass, noisy_DO, q_noise=0.01, 
     
     for k in range(1, n):
         dt = time_pts[k] - time_pts[k-1]
-        # Predict step
+        if dt <= 0:
+            dt = 1e-4  # Prevent zero division if timestamps duplicate
+            
+        # 1. Predict step
         X_prev, S_prev = x_hat[k-1]
-        mu_est = 0.45 * S_prev / (0.25 + S_prev) if S_prev > 0 else 0
+        mu_est = 0.45 * S_prev / (0.25 + S_prev) if S_prev > 0 else 0.0
         X_pred = X_prev + (mu_est * X_prev) * dt
-        S_pred = max(0, S_prev - (1.0 / 0.45) * mu_est * X_prev * dt)
+        S_pred = max(0.0, S_prev - (1.0 / 0.45) * mu_est * X_prev * dt)
         
-        # Linearize Jacobian F
+        # 2. Linearize Jacobian F
+        den = (0.25 + S_prev)**2
+        dmu_dS = (0.45 * 0.25 / den) if den > 0 else 0.0
+        
         F_mat = np.array([
-            [1 + mu_est * dt, X_prev * (0.45 * 0.25 / ((0.25 + S_prev)**2)) * dt],
-            [-(1.0 / 0.45) * mu_est * dt, 1 - (1.0 / 0.45) * X_prev * (0.45 * 0.25 / ((0.25 + S_prev)**2)) * dt]
+            [1.0 + mu_est * dt, X_prev * dmu_dS * dt],
+            [-(1.0 / 0.45) * mu_est * dt, 1.0 - (1.0 / 0.45) * X_prev * dmu_dS * dt]
         ])
         
         P_pred = F_mat @ P_cov @ F_mat.T + Q
         
-        # Update step with noisy biomass measurement z
+        # 3. Update step with noisy biomass measurement z
         z = noisy_biomass[k]
         H = np.array([[1.0, 0.0]])
-        y_residual = z - (H @ np.array([X_pred, S_pred]))[0]
-        S_res = H @ P_pred @ H.T + R
-        K_gain = P_pred @ H.T / S_res[0, 0]
+        y_residual = float(z - (H @ np.array([X_pred, S_pred]))[0])
         
-        updated_state = np.array([X_pred, S_pred]) + K_gain * y_residual
-        x_hat[k] = [max(0, updated_state[0]), max(0, updated_state[1])]
-        P_cov = (np.eye(2) - np.outer(K_gain, H)) @ P_pred
+        S_res = (H @ P_pred @ H.T) + R
+        K_gain = (P_pred @ H.T) / S_res[0, 0]  # Shape (2, 1)
+        
+        # Flatten vector operation to avoid dimensional mismatch in Python max()
+        correction = (K_gain.flatten() * y_residual)
+        updated_state = np.array([X_pred, S_pred]) + correction
+        
+        x_hat[k] = [max(0.0, float(updated_state[0])), max(0.0, float(updated_state[1]))]
+        P_cov = (np.eye(2) - K_gain @ H) @ P_pred
         
     return x_hat[:, 0], x_hat[:, 1]
 
