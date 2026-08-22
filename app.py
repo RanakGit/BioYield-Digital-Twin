@@ -444,54 +444,90 @@ with tab_fitting:
 
     # Execute Non-Linear Fitting Engine
     st.markdown("---")
-    st.markdown("### 📊 Non-Linear Regression Results")
-    
+   # ------------------------------------------
+# REGRESSION COMPUTATION ENGINE (FIXED)
+# ------------------------------------------
+st.markdown("### 📊 Non-Linear Regression Results")
+
+if 'Time' in exp_df.columns and 'Biomass' in exp_df.columns:
     try:
-        t_data = exp_df['Time'].values
-        x_data = exp_df['Biomass'].values
+        t_data = exp_df['Time'].astype(float).values
+        x_data = exp_df['Biomass'].astype(float).values
         
-        # Growth fit function
+        # Capped growth model to prevent runaway exponential curves
         def fit_growth(t, mu_est, x0_est):
-            return x0_est * np.exp(mu_est * t)
+            # Capped at realistic max biomass (~8.5 g/L) based on data upper bound
+            x_max = max(x_data) if len(x_data) > 0 else 10.0
+            raw_exp = x0_est * np.exp(mu_est * t)
+            return np.minimum(raw_exp, x_max)
         
-        # Fit on exponential phase
-        fit_idx = min(6, len(t_data))
-        popt, pcov = curve_fit(fit_growth, t_data[:fit_idx], x_data[:fit_idx], p0=[0.5, x_data[0]])
+        # Fit on exponential phase points (before stationary phase)
+        fit_idx = min(5, len(t_data))
+        popt, _ = curve_fit(fit_growth, t_data[:fit_idx], x_data[:fit_idx], p0=[0.4, x_data[0]])
         fitted_mu = popt[0]
         
-        # Calculate R² Goodness-of-fit
+        # R² Calculation
         residuals = x_data[:fit_idx] - fit_growth(t_data[:fit_idx], *popt)
         ss_res = np.sum(residuals**2)
         ss_tot = np.sum((x_data[:fit_idx] - np.mean(x_data[:fit_idx]))**2)
-        r_squared = 1 - (ss_res / ss_tot)
+        r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 1.0
         
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.metric("Estimated Specific Growth Rate (μ_max)", f"{fitted_mu:.4f} h⁻¹")
+            st.metric("Estimated Growth Rate (μ_max)", f"{fitted_mu:.4f} h⁻¹")
         with c2:
             st.metric("Regression Fit Precision (R²)", f"{r_squared:.4f}")
         with c3:
-            if st.button("⚡ Apply Fitted μ_max to Twin Model", use_container_width=True):
+            if st.button("⚡ Apply Fitted μ_max to Twin", use_container_width=True):
                 st.session_state['fitted_mu'] = float(fitted_mu)
-                st.success(f"Applied μ_max = {fitted_mu:.4f} h⁻¹ to sidebar!")
+                st.success(f"Updated μ_max to {fitted_mu:.4f} h⁻¹!")
                 st.rerun()
 
-        # Visual Fit Comparison Plot
+        # Visual Fit Plot with Forced High-Contrast Styling
         fig_fit = go.Figure()
-        fig_fit.add_trace(go.Scatter(x=t_data, y=x_data, mode='markers', name='Lab Samples (Biomass)', marker=dict(size=10, color='#E11D48')))
+        
+        fig_fit.add_trace(go.Scatter(
+            x=t_data, y=x_data, 
+            mode='markers', 
+            name='Lab Samples (Biomass)', 
+            marker=dict(size=10, color='#E11D48')
+        ))
         
         t_smooth = np.linspace(0, max(t_data), 100)
-        fig_fit.add_trace(go.Scatter(x=t_smooth, y=fit_growth(t_smooth, *popt), mode='lines', name='Regressed Monod Growth Curve', line=dict(color='#0D9488', width=2.5, dash='dash')))
+        fig_fit.add_trace(go.Scatter(
+            x=t_smooth, y=fit_growth(t_smooth, *popt), 
+            mode='lines', 
+            name='Regressed Monod Growth Curve', 
+            line=dict(color='#0D9488', width=2.5, dash='dash')
+        ))
         
+        # Explicit Font & Axis Color Overrides for High Legibility
         fig_fit.update_layout(
-            template="plotly_white", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            height=350, title="Experimental Biomass Points vs. Regression Model",
-            xaxis_title="Time (Hours)", yaxis_title="Biomass Concentration (g/L)"
+            template="plotly_white",
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            height=380,
+            title=dict(
+                text="<b>Experimental Biomass Points vs. Regression Model</b>",
+                font=dict(color="#0F172A", size=15)
+            ),
+            font=dict(color="#0F172A", family="Inter"),
+            legend=dict(
+                font=dict(color="#0F172A", size=12),
+                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+            )
         )
+        
+        grid_style = dict(showgrid=True, gridcolor="rgba(100, 100, 100, 0.15)", tickfont=dict(color="#0F172A"))
+        fig_fit.update_xaxes(title=dict(text="<b>Time (Hours)</b>", font=dict(color="#0F172A")), **grid_style)
+        fig_fit.update_yaxes(title=dict(text="<b>Biomass Concentration (g/L)</b>", font=dict(color="#0F172A")), **grid_style)
+
         st.plotly_chart(fig_fit, use_container_width=True)
 
     except Exception as e:
-        st.warning(f"Could not perform regression fit on dataset: {str(e)}")
+        st.error(f"Regression error: {str(e)}")
+else:
+    st.warning("⚠️ Column headers missing! Data must contain 'Time' and 'Biomass' headers.")
 
 
 # ------------------------------------------
