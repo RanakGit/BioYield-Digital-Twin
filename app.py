@@ -7,6 +7,7 @@ from scipy.integrate import odeint
 from scipy.optimize import curve_fit
 import datetime
 import html
+import io
 
 # ==========================================
 # 1. PAGE & INDUSTRIAL DESIGN SYSTEM (CSS)
@@ -27,7 +28,6 @@ st.markdown("""
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
-    /* Main Container & Layout */
     .stApp {
         background-color: var(--background-color);
         color: var(--text-color);
@@ -177,7 +177,6 @@ st.markdown("""
         opacity: 0.75;
     }
 
-    /* Print / Export helper */
     @media print {
         section[data-testid="stSidebar"], .stButton, header {
             display: none !important;
@@ -250,7 +249,6 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("#### Kinetic Parameters")
     
-    # Check session state overrides from fitting engine
     default_mu = st.session_state.get('fitted_mu', float(preset["mu_max"]))
     
     mu_max = st.slider("μ_max (Max Specific Growth Rate, 1/h)", 0.01, 1.50, default_mu, 0.01)
@@ -346,21 +344,21 @@ with tab_twin:
     with col_chart:
         fig = make_subplots(specs=[[{"secondary_y": True}]])
         
-        # Biomass (X) - Emerald
+        # Biomass (X)
         fig.add_trace(go.Scatter(
             x=sim_df['Time (hr)'], y=sim_df['Biomass X (g/L)'],
             name="Biomass (X)",
             line=dict(color="#0D9488", width=3.5)
         ), secondary_y=False)
         
-        # Substrate (S) - Crimson Dashed
+        # Substrate (S)
         fig.add_trace(go.Scatter(
             x=sim_df['Time (hr)'], y=sim_df['Substrate S (g/L)'],
             name="Substrate (S)",
             line=dict(color="#E11D48", width=2.5, dash='dash')
         ), secondary_y=False)
         
-        # Product (P) - Deep Cyan
+        # Product (P)
         fig.add_trace(go.Scatter(
             x=sim_df['Time (hr)'], y=sim_df['Product P (g/L)'],
             name="Product (P)",
@@ -368,9 +366,7 @@ with tab_twin:
         ), secondary_y=True)
 
         fig.update_layout(
-            template="plotly_white",
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
+            template="none",
             height=480,
             margin=dict(l=10, r=10, t=30, b=10),
             legend=dict(
@@ -380,7 +376,7 @@ with tab_twin:
             hovermode="x unified"
         )
 
-        grid_color = "rgba(128, 128, 128, 0.15)"
+        grid_color = "rgba(128, 128, 128, 0.2)"
         fig.update_xaxes(title_text="<b>Batch Duration (Hours)</b>", showgrid=True, gridcolor=grid_color)
         fig.update_yaxes(title_text="<b>Biomass & Substrate (g/L)</b>", secondary_y=False, showgrid=True, gridcolor=grid_color)
         fig.update_yaxes(title_text="<b>Product Concentration (g/L)</b>", secondary_y=True, showgrid=True, gridcolor=grid_color)
@@ -416,109 +412,125 @@ with tab_fitting:
     st.markdown("""
     <div class="section-banner">
         <h4>🔬 Non-Linear Regression & Parameter Fitting Engine</h4>
-        <p>Upload offline laboratory sample readings (.csv) to automatically estimate empirical kinetic constants using SciPy curve fitting.</p>
+        <p>Upload a laboratory run CSV or paste raw sampling data below to estimate kinetic constants (μ_max) using SciPy.</p>
     </div>
     """, unsafe_allow_html=True)
     
-    col_upload, col_preview = st.columns([1, 1])
+    input_mode = st.radio("Choose Input Method:", ["📄 Upload CSV File", "✍️ Paste Raw Text / Excel Data"], horizontal=True)
     
-    with col_upload:
-        uploaded_file = st.file_uploader("Select Experimental Fermentation Run CSV", type=["csv"])
-        
-        # Template Generator
-        demo_t = np.array([0, 2, 4, 6, 8, 12, 16, 20, 24])
-        demo_x = np.array([0.15, 0.32, 0.78, 1.85, 3.90, 7.20, 8.10, 8.35, 8.40])
-        demo_s = np.array([30.0, 28.5, 25.1, 19.8, 12.0, 3.2, 0.5, 0.1, 0.0])
-        demo_df = pd.DataFrame({'Time': demo_t, 'Biomass': demo_x, 'Substrate': demo_s})
-        
-        st.download_button("📥 Download Laboratory Data Template", demo_df.to_csv(index=False), "lab_run_template.csv", "text/csv")
+    exp_df = None
+    
+    if input_mode == "📄 Upload CSV File":
+        col_upload, col_sample = st.columns([2, 1])
+        with col_upload:
+            uploaded_file = st.file_uploader("Select Fermentation Run CSV", type=["csv", "txt"])
+            if uploaded_file is not None:
+                try:
+                    exp_df = pd.read_csv(uploaded_file)
+                except Exception as e:
+                    st.error(f"Error parsing file: {e}")
+        with col_sample:
+            demo_csv = "Time,Biomass,Substrate,Product\n0,0.15,30.0,0.00\n2,0.32,28.5,0.05\n4,0.78,25.1,0.22\n6,1.85,19.8,0.65\n8,3.90,12.0,1.40\n12,7.20,3.2,2.85\n16,8.10,0.5,3.40\n20,8.35,0.1,3.55\n24,8.40,0.0,3.60"
+            st.download_button("📥 Download Sample Lab CSV", demo_csv, "bioprocess_run_data.csv", "text/csv", use_container_width=True)
 
-    with col_preview:
-        if uploaded_file is not None:
-            exp_df = pd.read_csv(uploaded_file)
-            st.markdown("##### Uploaded Sample Data Preview")
-            st.dataframe(exp_df, height=180, use_container_width=True)
-        else:
-            exp_df = demo_df
-            st.info("ℹ️ Showing default demo lab dataset. Upload your own CSV above.")
-
-    # Execute Non-Linear Fitting Engine
-    st.markdown("---")
-   # ------------------------------------------
-# REGRESSION COMPUTATION ENGINE (FIXED)
-# ------------------------------------------
-st.markdown("### 📊 Non-Linear Regression Results")
-
-if 'Time' in exp_df.columns and 'Biomass' in exp_df.columns:
-    try:
-        t_data = exp_df['Time'].astype(float).values
-        x_data = exp_df['Biomass'].astype(float).values
-        
-        # Capped growth model to prevent runaway exponential curves
-        def fit_growth(t, mu_est, x0_est):
-            # Capped at realistic max biomass (~8.5 g/L) based on data upper bound
-            x_max = max(x_data) if len(x_data) > 0 else 10.0
-            raw_exp = x0_est * np.exp(mu_est * t)
-            return np.minimum(raw_exp, x_max)
-        
-        # Fit on exponential phase points (before stationary phase)
-        fit_idx = min(5, len(t_data))
-        popt, _ = curve_fit(fit_growth, t_data[:fit_idx], x_data[:fit_idx], p0=[0.4, x_data[0]])
-        fitted_mu = popt[0]
-        
-        # R² Calculation
-        residuals = x_data[:fit_idx] - fit_growth(t_data[:fit_idx], *popt)
-        ss_res = np.sum(residuals**2)
-        ss_tot = np.sum((x_data[:fit_idx] - np.mean(x_data[:fit_idx]))**2)
-        r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 1.0
-        
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.metric("Estimated Growth Rate (μ_max)", f"{fitted_mu:.4f} h⁻¹")
-        with c2:
-            st.metric("Regression Fit Precision (R²)", f"{r_squared:.4f}")
-        with c3:
-            if st.button("⚡ Apply Fitted μ_max to Twin", use_container_width=True):
-                st.session_state['fitted_mu'] = float(fitted_mu)
-                st.success(f"Updated μ_max to {fitted_mu:.4f} h⁻¹!")
-                st.rerun()
-
-       # Plot regression curve vs points
-        fig_fit = go.Figure()
-        
-        fig_fit.add_trace(go.Scatter(
-            x=t_data, y=x_data, 
-            mode='markers', 
-            name='Lab Samples (Biomass)', 
-            marker=dict(size=10, color='#E11D48')
-        ))
-        
-        t_smooth = np.linspace(0, max(t_data), 100)
-        fig_fit.add_trace(go.Scatter(
-            x=t_smooth, y=fit_growth(t_smooth, *popt), 
-            mode='lines', 
-            name='Regressed Monod Growth Curve', 
-            line=dict(color='#0D9488', width=2.5, dash='dash')
-        ))
-        
-        # Native Theme-Adaptive Layout (No hardcoded font colors!)
-        fig_fit.update_layout(
-            template="none",  # Inherits Streamlit's theme defaults
-            height=380,
-            margin=dict(l=10, r=10, t=40, b=10),
-            title=dict(text="<b>Experimental Biomass Points vs. Regression Model</b>"),
-            legend=dict(
-                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-            ),
-            hovermode="x unified"
+    else:
+        raw_text = st.text_area(
+            "Paste Tabular Data Here (CSV or copied directly from Excel/Google Sheets):",
+            height=180,
+            placeholder="Time,Biomass,Substrate\n0,0.15,30.0\n2,0.32,28.5\n4,0.78,25.1\n6,1.85,19.8\n8,3.90,12.0"
         )
-        
-        # Gridlines adapt automatically using alpha channel
-        grid_style = dict(showgrid=True, gridcolor="rgba(128, 128, 128, 0.2)")
-        fig_fit.update_xaxes(title_text="<b>Time (Hours)</b>", **grid_style)
-        fig_fit.update_yaxes(title_text="<b>Biomass Concentration (g/L)</b>", **grid_style)
+        if raw_text.strip():
+            try:
+                sep = '\t' if '\t' in raw_text else ','
+                exp_df = pd.read_csv(io.StringIO(raw_text.strip()), sep=sep)
+            except Exception as e:
+                st.error(f"Could not parse pasted text. Ensure header format is 'Time,Biomass,Substrate'. Error: {e}")
 
-        st.plotly_chart(fig_fit, use_container_width=True)
+    # Fallback dataset
+    if exp_df is None:
+        st.info("💡 Showing default bioprocess dataset below. Paste or upload data above to test your own run.")
+        exp_df = pd.DataFrame({
+            'Time': [0, 2, 4, 6, 8, 12, 16, 20, 24],
+            'Biomass': [0.15, 0.32, 0.78, 1.85, 3.90, 7.20, 8.10, 8.35, 8.40],
+            'Substrate': [30.0, 28.5, 25.1, 19.8, 12.0, 3.2, 0.5, 0.1, 0.0]
+        })
+
+    st.markdown("---")
+    st.markdown("##### Processed Dataset Preview")
+    st.dataframe(exp_df, height=160, use_container_width=True)
+
+    # REGRESSION ENGINE
+    st.markdown("### 📊 Non-Linear Regression Results")
+    
+    if 'Time' in exp_df.columns and 'Biomass' in exp_df.columns:
+        try:
+            t_data = exp_df['Time'].astype(float).values
+            x_data = exp_df['Biomass'].astype(float).values
+            
+            def fit_growth(t, mu_est, x0_est):
+                x_max = max(x_data) if len(x_data) > 0 else 10.0
+                raw_exp = x0_est * np.exp(mu_est * t)
+                return np.minimum(raw_exp, x_max)
+            
+            fit_idx = min(5, len(t_data))
+            popt, _ = curve_fit(fit_growth, t_data[:fit_idx], x_data[:fit_idx], p0=[0.4, x_data[0]])
+            fitted_mu = popt[0]
+            
+            residuals = x_data[:fit_idx] - fit_growth(t_data[:fit_idx], *popt)
+            ss_res = np.sum(residuals**2)
+            ss_tot = np.sum((x_data[:fit_idx] - np.mean(x_data[:fit_idx]))**2)
+            r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 1.0
+            
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.metric("Estimated Growth Rate (μ_max)", f"{fitted_mu:.4f} h⁻¹")
+            with c2:
+                st.metric("Regression Fit Precision (R²)", f"{r_squared:.4f}")
+            with c3:
+                if st.button("⚡ Apply Fitted μ_max to Twin", use_container_width=True):
+                    st.session_state['fitted_mu'] = float(fitted_mu)
+                    st.success(f"Updated μ_max to {fitted_mu:.4f} h⁻¹!")
+                    st.rerun()
+
+            # Plot regression curve
+            fig_fit = go.Figure()
+            
+            fig_fit.add_trace(go.Scatter(
+                x=t_data, y=x_data, 
+                mode='markers', 
+                name='Lab Samples (Biomass)', 
+                marker=dict(size=10, color='#E11D48')
+            ))
+            
+            t_smooth = np.linspace(0, max(t_data), 100)
+            fig_fit.add_trace(go.Scatter(
+                x=t_smooth, y=fit_growth(t_smooth, *popt), 
+                mode='lines', 
+                name='Regressed Monod Growth Curve', 
+                line=dict(color='#0D9488', width=2.5, dash='dash')
+            ))
+            
+            fig_fit.update_layout(
+                template="none",
+                height=380,
+                margin=dict(l=10, r=10, t=40, b=10),
+                title=dict(text="<b>Experimental Biomass Points vs. Regression Model</b>"),
+                legend=dict(
+                    orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+                ),
+                hovermode="x unified"
+            )
+            
+            grid_style = dict(showgrid=True, gridcolor="rgba(128, 128, 128, 0.2)")
+            fig_fit.update_xaxes(title_text="<b>Time (Hours)</b>", **grid_style)
+            fig_fit.update_yaxes(title_text="<b>Biomass Concentration (g/L)</b>", **grid_style)
+
+            st.plotly_chart(fig_fit, use_container_width=True)
+
+        except Exception as e:
+            st.error(f"Regression error: {str(e)}")
+    else:
+        st.warning("⚠️ Column headers missing! Data must contain 'Time' and 'Biomass' headers.")
 
 
 # ------------------------------------------
@@ -535,7 +547,7 @@ with tab_sensitivity:
     col_sweep_controls, col_sweep_plot = st.columns([1, 2.5])
     
     with col_sweep_controls:
-        st.markdown("##### Sweep Resolution Settings")
+        st.markdown("##### Sweep Settings")
         resolution = st.slider("Grid Resolution (Points)", 5, 15, 8)
         s0_max_sweep = st.number_input("Max Substrate S₀ for Sweep (g/L)", 20.0, 300.0, 100.0)
         
@@ -561,9 +573,7 @@ with tab_sensitivity:
             title="Product Yield Surface Contour",
             xaxis_title="<b>μ_max Growth Rate (1/hr)</b>",
             yaxis_title="<b>Initial Substrate S₀ (g/L)</b>",
-            template="plotly_white",
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
+            template="none",
             height=440
         )
         st.plotly_chart(fig_sens, use_container_width=True)
