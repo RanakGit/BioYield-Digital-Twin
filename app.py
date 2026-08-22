@@ -575,23 +575,103 @@ with tab_fitting:
             st.plotly_chart(fig_fit, use_container_width=True)
         except Exception as e: st.error(f"Regression error: {e}")
 
-# --- TAB 4: REPORT GENERATOR ---
+# --- TAB 4: REPORT GENERATOR & AUDIT ---
 with tab_report:
     st.markdown("#### 📄 Executive Batch Verification Audit Report")
+    
+    # Capture live dynamic state values
+    current_time_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    user_name = st.session_state.get('username', 'Operator')
+    facility_name = st.session_state.get('org', 'Default Facility')
+    
+    # Calculate live process metrics
+    final_time = sim_df['Time (hr)'].iloc[-1]
+    peak_x = sim_df['Biomass X (g/L)'].max()
+    final_s = sim_df['Substrate S (g/L)'].iloc[-1]
+    overall_yield_px = (final_P / (final_X - X0)) if (final_X - X0) > 0 else 0.0
+    
     report_html = f"""
-    <div style="background:#FFF; color:#000; padding:24px; border:1px solid #CCC; font-family:sans-serif;">
-        <h2 style="color:#0284C7; margin:0;">BioTwin Enterprise Audit Certificate</h2>
-        <p><b>Facility:</b> {st.session_state.get('org', 'Default Facility')} | <b>Operator:</b> {st.session_state.get('username', 'Operator')} | <b>Date:</b> {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
-        <hr/>
-        <ul>
-            <li><b>Strain Profile:</b> {preset_choice}</li>
-            <li><b>Feeding Strategy:</b> {feed_policy} (Base F0: {F0} L/h)</li>
-            <li><b>Environmental Conditions:</b> {T_curr}°C | pH {pH_curr}</li>
-            <li><b>Final Yield (Product P):</b> {final_P:.2f} g/L</li>
-            <li><b>Toxic Byproduct Accumulation (A):</b> {final_A:.2f} g/L (Critical Limit: {A_crit} g/L)</li>
-            <li><b>Volumetric Mass Transfer (kL a):</b> {kla} h⁻¹</li>
-        </ul>
+    <div style="background:#FFFFFF; color:#1E293B; padding:28px; border:1px solid #E2E8F0; border-radius:12px; font-family:'Segoe UI', Roboto, Helvetica, sans-serif; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #0284C7; padding-bottom:12px; margin-bottom:20px;">
+            <div>
+                <h2 style="color:#0284C7; margin:0; font-size:22px; font-weight:700;">BioTwin Enterprise Audit Certificate</h2>
+                <span style="font-size:12px; color:#64748B;">Automated Digital Twin Batch Run Record</span>
+            </div>
+            <div style="text-align:right;">
+                <span style="background:#0284C7; color:#FFF; font-size:11px; font-weight:700; padding:4px 8px; border-radius:4px;">VERIFIED RUN</span>
+            </div>
+        </div>
+        
+        <table style="width:100%; font-size:13px; margin-bottom:20px; border-collapse:collapse;">
+            <tr>
+                <td style="padding:4px 0;"><b>Facility:</b> {facility_name}</td>
+                <td style="padding:4px 0;"><b>Operator:</b> {user_name}</td>
+            </tr>
+            <tr>
+                <td style="padding:4px 0;"><b>Active Strain/Profile:</b> {preset_choice}</td>
+                <td style="padding:4px 0;"><b>Execution Time:</b> {current_time_str}</td>
+            </tr>
+        </table>
+
+        <h3 style="font-size:14px; color:#0D9488; border-bottom:1px solid #CBD5E1; padding-bottom:4px; margin-top:16px;">1. Operating Environment & Feeding Strategy</h3>
+        <table style="width:100%; font-size:12px; border-collapse:collapse; margin-bottom:16px;">
+            <tr style="background:#F8FAFC;">
+                <td style="padding:6px;"><b>Temperature (Actual / Target):</b> {T_curr}°C / {T_opt}°C</td>
+                <td style="padding:6px;"><b>pH (Actual / Target):</b> {pH_curr} / {pH_opt}</td>
+            </tr>
+            <tr>
+                <td style="padding:6px;"><b>Feeding Strategy:</b> {feed_policy}</td>
+                <td style="padding:6px;"><b>Base Feed Rate (F₀):</b> {F0} L/h</td>
+            </tr>
+            <tr style="background:#F8FAFC;">
+                <td style="padding:6px;"><b>Feed Substrate Conc (S_feed):</b> {S_feed} g/L</td>
+                <td style="padding:6px;"><b>Volumetric Oxygen Transfer (k_L a):</b> {kla} h⁻¹</td>
+            </tr>
+        </table>
+
+        <h3 style="font-size:14px; color:#0D9488; border-bottom:1px solid #CBD5E1; padding-bottom:4px; margin-top:16px;">2. Active Kinetic Model Parameters</h3>
+        <table style="width:100%; font-size:12px; border-collapse:collapse; margin-bottom:16px;">
+            <tr style="background:#F8FAFC;">
+                <td style="padding:6px;"><b>Max Growth Rate (μ_max):</b> {mu_max:.4f} h⁻¹</td>
+                <td style="padding:6px;"><b>Substrate Affinity (K_s):</b> {Ks:.3f} g/L</td>
+            </tr>
+            <tr>
+                <td style="padding:6px;"><b>Haldane Inhibition (K_i):</b> {Ki:.1f} g/L</td>
+                <td style="padding:6px;"><b>Biomass Yield (Y_x/s):</b> {Y_xs:.3f} g/g</td>
+            </tr>
+        </table>
+
+        <h3 style="font-size:14px; color:#0D9488; border-bottom:1px solid #CBD5E1; padding-bottom:4px; margin-top:16px;">3. Simulated Performance Metrics & Yields</h3>
+        <table style="width:100%; font-size:12px; border-collapse:collapse; margin-bottom:16px;">
+            <tr style="background:#F8FAFC;">
+                <td style="padding:6px;"><b>Batch Duration:</b> {final_time:.1f} Hours</td>
+                <td style="padding:6px;"><b>Final Working Volume:</b> {final_V:.2f} L</td>
+            </tr>
+            <tr>
+                <td style="padding:6px;"><b>Peak Biomass (X_max):</b> {peak_x:.2f} g/L</td>
+                <td style="padding:6px;"><b>Residual Substrate (S_final):</b> {final_s:.2f} g/L</td>
+            </tr>
+            <tr style="background:#F8FAFC;">
+                <td style="padding:6px;"><b>Target Product Titer (P):</b> <b style="color:#0284C7;">{final_P:.2f} g/L</b></td>
+                <td style="padding:6px;"><b>Product / Biomass Yield (Y_p/x):</b> {overall_yield_px:.3f} g/g</td>
+            </tr>
+            <tr>
+                <td style="padding:6px;"><b>Toxic Byproduct (A):</b> <b style="color:{'#E11D48' if final_A >= A_crit*0.8 else '#0D9488'};">{final_A:.2f} g/L</b> (Crit: {A_crit} g/L)</td>
+                <td style="padding:6px;"><b>Volumetric Productivity:</b> <b>{vol_prod:.3f} g/h</b></td>
+            </tr>
+        </table>
+
+        <div style="font-size:10px; color:#94A3B8; margin-top:20px; text-align:center; border-top:1px solid #E2E8F0; padding-top:8px;">
+            Generated by BioTwin Pro v4.0 Engine • Confidential Bioprocess Audit Report
+        </div>
     </div>
     """
-    st.components.v1.html(report_html, height=260)
-    st.download_button("📥 Download HTML Compliance Certificate", report_html, "BioTwin_v4_Batch_Certificate.html", "text/html", use_container_width=True)
+    
+    st.components.v1.html(report_html, height=520, scrolling=True)
+    st.download_button(
+        "📥 Download Verified Audit Certificate (HTML)",
+        report_html,
+        f"BioTwin_Batch_Report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
+        "text/html",
+        use_container_width=True
+    )
