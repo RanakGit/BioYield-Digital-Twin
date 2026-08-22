@@ -341,7 +341,24 @@ ORGANISM_PRESETS = {
         "alpha": 0.18, "beta": 0.004, "X0": 0.20, "S0": 18.0, "batch_time": 120.0,
         "kla": 25.0, "F0": 0.005, "S_feed": 50.0, "T_opt": 36.5, "pH_opt": 7.2,
         "alpha_A": 0.22, "beta_A": 0.005, "A_crit": 5.0
-    }
+    },
+    with st.sidebar:
+    st.markdown("### ⚙️ Enterprise Twin Config")
+    st.caption(f"Connected Facility: **{st.session_state.get('org', 'Default Facility')}**")
+    
+    # --- CUSTOM STRAIN & ENTERPRISE OVERRIDE ---
+    use_custom_strain = st.checkbox("✍️ Enter Custom Strain / Strain ID", value=False)
+    
+    if use_custom_strain:
+        custom_strain_name = st.text_input("Custom Strain / Organism Name", "Wild-Type E. coli K-12")
+        custom_strain_id = st.text_input("Batch / Lot ID", "LOT-2026-0822-X")
+        custom_target_product = st.text_input("Target Molecule / Product", "Therapeutic Protein B")
+        preset_choice = f"{custom_strain_name} ({custom_strain_id})"
+        preset = ORGANISM_PRESETS["E. coli Recombinant Protein"]  # Default base baseline parameters
+    else:
+        preset_choice = st.selectbox("Active Strain Profile", list(ORGANISM_PRESETS.keys()))
+        preset = ORGANISM_PRESETS[preset_choice]
+        custom_target_product = "Target Biomaterial / Recombinant Product"
 }
 
 with st.sidebar:
