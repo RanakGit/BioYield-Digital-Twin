@@ -6,15 +6,16 @@ from plotly.subplots import make_subplots
 from scipy.integrate import odeint
 from scipy.optimize import curve_fit
 import datetime
-import html
 import io
-import requests
+import sqlite3
+import hashlib
+import math
 
 # ==========================================
 # 1. PAGE & INDUSTRIAL DESIGN SYSTEM (CSS)
 # ==========================================
 st.set_page_config(
-    page_title="BioTwin Pro | Enterprise Bioprocess Digital Twin",
+    page_title="BioTwin Pro Enterprise v4.0",
     page_icon="🧬",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -28,11 +29,6 @@ st.markdown("""
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
-    .stApp {
-        background-color: var(--background-color);
-        color: var(--text-color);
-    }
-
     .brand-header {
         display: flex;
         align-items: center;
@@ -42,13 +38,11 @@ st.markdown("""
         border: 1px solid rgba(128, 128, 128, 0.2);
         border-radius: 12px;
         margin-bottom: 1.5rem;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
     }
     
     .brand-title {
         font-size: 1.4rem;
         font-weight: 700;
-        letter-spacing: -0.02em;
         display: flex;
         align-items: center;
         gap: 0.6rem;
@@ -62,12 +56,9 @@ st.markdown("""
         padding: 0.2rem 0.6rem;
         border-radius: 20px;
         text-transform: uppercase;
-        letter-spacing: 0.08em;
     }
 
     .kpi-container {
-        display: grid;
-        grid-content-columns: repeat(auto-fit, minmax(200px, 1fr));
         display: flex;
         gap: 1rem;
         margin-bottom: 1.5rem;
@@ -79,24 +70,21 @@ st.markdown("""
         border: 1px solid rgba(128, 128, 128, 0.18);
         border-left: 4px solid #0284C7;
         border-radius: 10px;
-        padding: 1.1rem 1.25rem;
-        transition: all 0.2s ease-in-out;
+        padding: 1rem 1.25rem;
     }
 
     .kpi-label {
         font-size: 0.75rem;
         font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0.06em;
         opacity: 0.7;
         margin-bottom: 0.35rem;
     }
 
     .kpi-value {
-        font-size: 1.6rem;
+        font-size: 1.5rem;
         font-weight: 700;
         font-family: 'JetBrains Mono', monospace;
-        line-height: 1.1;
     }
 
     .section-banner {
@@ -109,14 +97,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-import sqlite3
-import hashlib
-
 # ==========================================
-# 2. AUTHENTICATION & DATABASE SIGN-UP GATE
+# 2. AUTHENTICATION & DATABASE SYSTEM
 # ==========================================
-
-# Initialize SQLite user database
 def init_user_db():
     conn = sqlite3.connect("biotwin_users.db")
     cursor = conn.cursor()
@@ -138,15 +121,12 @@ def hash_password(password: str) -> str:
 def register_user(username: str, facility: str, password: str) -> tuple[bool, str]:
     if not username.strip() or not password.strip():
         return False, "Username and password cannot be empty."
-    
     conn = sqlite3.connect("biotwin_users.db")
     cursor = conn.cursor()
     try:
         hashed = hash_password(password)
-        cursor.execute(
-            "INSERT INTO users (username, facility, password_hash) VALUES (?, ?, ?)",
-            (username.strip().lower(), facility.strip(), hashed)
-        )
+        cursor.execute("INSERT INTO users (username, facility, password_hash) VALUES (?, ?, ?)",
+                       (username.strip().lower(), facility.strip(), hashed))
         conn.commit()
         conn.close()
         return True, "Account created successfully! You can now log in."
@@ -160,7 +140,6 @@ def authenticate_user(username: str, password: str) -> tuple[bool, str, str]:
     cursor.execute("SELECT facility, password_hash FROM users WHERE username = ?", (username.strip().lower(),))
     row = cursor.fetchone()
     conn.close()
-
     if row:
         facility, stored_hash = row
         if stored_hash == hash_password(password):
@@ -168,39 +147,33 @@ def authenticate_user(username: str, password: str) -> tuple[bool, str, str]:
         return False, "", "Incorrect password."
     return False, "", "Username not found. Please Sign Up first."
 
-# Initialize DB on load
 init_user_db()
 
-# State Management
 if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
 
 if not st.session_state['authenticated']:
-    st.markdown("## 🧬 Welcome to BioTwin Pro")
-    st.caption("Access the Enterprise Bioprocess Digital Twin & Simulation Platform")
-
-    # Tabbed Interface for Log In vs Sign Up
+    st.markdown("## 🧬 Welcome to BioTwin Pro Enterprise")
+    st.caption("Access the Bioprocess Digital Twin & Physical Simulation Engine")
+    
     auth_tab1, auth_tab2 = st.tabs(["🔒 Log In", "📝 Sign Up (New Account)"])
-
-    # --- LOG IN TAB ---
+    
     with auth_tab1:
         with st.form("login_form"):
             login_user = st.text_input("Username or Email")
             login_pass = st.text_input("Password", type="password")
             login_btn = st.form_submit_button("Log In", use_container_width=True)
-
             if login_btn:
                 success, facility, msg = authenticate_user(login_user, login_pass)
                 if success:
                     st.session_state['authenticated'] = True
                     st.session_state['username'] = login_user.strip().lower()
                     st.session_state['org'] = facility
-                    st.success(f"Welcome back, {login_user}! Redirecting...")
+                    st.success("Authorized! Loading Digital Twin...")
                     st.rerun()
                 else:
                     st.error(msg)
-
-    # --- SIGN UP TAB ---
+                    
     with auth_tab2:
         with st.form("signup_form"):
             new_user = st.text_input("Choose Username / Email")
@@ -208,7 +181,6 @@ if not st.session_state['authenticated']:
             new_pass = st.text_input("Create Password", type="password")
             confirm_pass = st.text_input("Confirm Password", type="password")
             signup_btn = st.form_submit_button("Create Account & Sign Up", use_container_width=True)
-
             if signup_btn:
                 if new_pass != confirm_pass:
                     st.error("Passwords do not match!")
@@ -216,146 +188,228 @@ if not st.session_state['authenticated']:
                     st.error("Password must be at least 4 characters long.")
                 else:
                     created, msg = register_user(new_user, new_facility, new_pass)
-                    if created:
-                        st.success(msg)
-                    else:
-                        st.error(msg)
-
+                    if created: st.success(msg)
+                    else: st.error(msg)
     st.stop()
+
 # ==========================================
-# 3. ADVANCED NUMERICAL COMPUTATION ENGINE
+# 3. EXTENDED PHYSICS & KINETICS ENGINE
 # ==========================================
-def haldane_fedbatch_model(y, t, mu_max, Ks, Ki, Y_xs, Y_ps, alpha, beta, kla, C_star, q_O2, F_in, S_feed):
-    X, S, P, DO, V = max(0, y[0]), max(0, y[1]), max(0, y[2]), max(0, y[3]), max(1e-3, y[4])
+def temp_factor(T, T_opt, T_min, T_max):
+    if T <= T_min or T >= T_max: return 0.0
+    num = (T - T_max) * ((T - T_min)**2)
+    den = (T_opt - T_min) * ((T_opt - T_min)*(T - T_opt) - (T_opt - T_max)*(T_opt + T_min - 2.0*T))
+    return max(0.0, num / den) if den != 0 else 0.0
+
+def ph_factor(pH, pH_opt, width):
+    return math.exp(-((pH - pH_opt) / width)**2)
+
+def enterprise_v4_model(y, t, mu_max, Ks, Ki, Y_xs, Y_ps, alpha, beta, kla, C_star, q_O2,
+                        T_curr, T_opt, T_min, T_max, pH_curr, pH_opt, pH_width,
+                        alpha_A, beta_A, A_crit,
+                        feed_policy, F0, mu_set, DO_thresh, S_feed):
     
-    # Haldane kinetic expression with substrate inhibition
-    mu = mu_max * S / (Ks + S + ((S**2) / Ki)) if S > 0 else 0.0
+    X, S, P, A, DO, V = max(0, y[0]), max(0, y[1]), max(0, y[2]), max(0, y[3]), max(0, y[4]), max(1e-3, y[5])
+    
+    # 1. Environmental & Byproduct Adjustments
+    g_T = temp_factor(T_curr, T_opt, T_min, T_max)
+    g_pH = ph_factor(pH_curr, pH_opt, pH_width)
+    byproduct_inh = max(0.0, 1.0 - (A / A_crit)) if A_crit > 0 else 1.0
+    
+    # 2. Kinetic Specific Growth Rate
+    mu_base = mu_max * S / (Ks + S + ((S**2) / Ki)) if S > 0 else 0.0
+    mu_eff = mu_base * g_T * g_pH * byproduct_inh
+    
+    # 3. Dynamic Feeding Control Logic
+    if feed_policy == "Exponential":
+        F_in = F0 * math.exp(mu_set * t)
+    elif feed_policy == "DO-Stat":
+        DO_pct = (DO / C_star) * 100.0
+        F_in = F0 * 3.0 if DO_pct > DO_thresh else F0 * 0.1
+    else:  # Constant
+        F_in = F0
+        
     D = F_in / V
     
-    dXdt = (mu - D) * X
-    dSdt = D * (S_feed - S) - ((1.0 / Y_xs) * mu * X) if S > 0 else D * (S_feed - S)
-    dPdt = -D * P + (Y_ps * mu * X) + (alpha * mu * X) + (beta * X)
+    # 4. Differential Equations
+    dXdt = (mu_eff - D) * X
+    dSdt = D * (S_feed - S) - ((1.0 / Y_xs) * mu_eff * X) if S > 0 else D * (S_feed - S)
+    dPdt = -D * P + (Y_ps * mu_eff * X) + (alpha * mu_eff * X) + (beta * X)
+    dAdt = -D * A + (alpha_A * mu_eff * X) + (beta_A * X)  # Luedeking-Piret Byproduct
     
-    # Oxygen Mass Transfer Balance (OTR - OUR)
     OTR = kla * (C_star - DO)
-    OUR = q_O2 * X * 1000.0  # mg/L/h
+    OUR = q_O2 * X * 1000.0
     dDOdt = OTR - OUR - (D * DO)
     dVdt = F_in
     
-    return [dXdt, dSdt, dPdt, dDOdt, dVdt]
+    return [dXdt, dSdt, dPdt, dAdt, dDOdt, dVdt]
 
 @st.cache_data(ttl=3600)
-def run_advanced_simulation(X0, S0, P0, DO0, V0, mu_max, Ks, Ki, Y_xs, Y_ps, alpha, beta, kla, C_star, q_O2, F_in, S_feed, batch_time, n_points=300):
+def run_v4_simulation(X0, S0, P0, A0, DO0, V0, mu_max, Ks, Ki, Y_xs, Y_ps, alpha, beta, kla, C_star, q_O2,
+                       T_curr, T_opt, T_min, T_max, pH_curr, pH_opt, pH_width,
+                       alpha_A, beta_A, A_crit,
+                       feed_policy, F0, mu_set, DO_thresh, S_feed, batch_time, n_points=300):
     t = np.linspace(0, batch_time, n_points)
     try:
         sol = odeint(
-            haldane_fedbatch_model, 
-            [X0, S0, P0, DO0, V0], 
-            t, 
-            args=(mu_max, Ks, Ki, Y_xs, Y_ps, alpha, beta, kla, C_star, q_O2, F_in, S_feed)
+            enterprise_v4_model, [X0, S0, P0, A0, DO0, V0], t,
+            args=(mu_max, Ks, Ki, Y_xs, Y_ps, alpha, beta, kla, C_star, q_O2,
+                  T_curr, T_opt, T_min, T_max, pH_curr, pH_opt, pH_width,
+                  alpha_A, beta_A, A_crit, feed_policy, F0, mu_set, DO_thresh, S_feed)
         )
-        df = pd.DataFrame({
+        return pd.DataFrame({
             'Time (hr)': t,
             'Biomass X (g/L)': np.clip(sol[:, 0], 0, None),
             'Substrate S (g/L)': np.clip(sol[:, 1], 0, None),
             'Product P (g/L)': np.clip(sol[:, 2], 0, None),
-            'Dissolved Oxygen DO (mg/L)': np.clip(sol[:, 3], 0, None),
-            'Reactor Volume V (L)': sol[:, 4]
-        })
-        return df, True
+            'Byproduct A (g/L)': np.clip(sol[:, 3], 0, None),
+            'Dissolved Oxygen DO (mg/L)': np.clip(sol[:, 4], 0, None),
+            'Reactor Volume V (L)': sol[:, 5]
+        }), True
     except Exception as e:
         return pd.DataFrame(), False
 
+# --- EXTENDED KALMAN FILTER (EKF) FOR SENSOR TELEMETRY ---
+def run_extended_kalman_filter(time_pts, noisy_biomass, noisy_DO, q_noise=0.01, r_noise=0.15):
+    """
+    EKF State Estimator: Filters sensor noise and estimates hidden substrate state S(t)
+    """
+    n = len(time_pts)
+    x_hat = np.zeros((n, 2))  # [Biomass_est, Substrate_est]
+    x_hat[0] = [noisy_biomass[0], 25.0]  # Initial state guess
+    P_cov = np.eye(2) * 0.1
+    Q = np.eye(2) * q_noise
+    R = np.eye(1) * r_noise
+    
+    for k in range(1, n):
+        dt = time_pts[k] - time_pts[k-1]
+        # Predict step
+        X_prev, S_prev = x_hat[k-1]
+        mu_est = 0.45 * S_prev / (0.25 + S_prev) if S_prev > 0 else 0
+        X_pred = X_prev + (mu_est * X_prev) * dt
+        S_pred = max(0, S_prev - (1.0 / 0.45) * mu_est * X_prev * dt)
+        
+        # Linearize Jacobian F
+        F_mat = np.array([
+            [1 + mu_est * dt, X_prev * (0.45 * 0.25 / ((0.25 + S_prev)**2)) * dt],
+            [-(1.0 / 0.45) * mu_est * dt, 1 - (1.0 / 0.45) * X_prev * (0.45 * 0.25 / ((0.25 + S_prev)**2)) * dt]
+        ])
+        
+        P_pred = F_mat @ P_cov @ F_mat.T + Q
+        
+        # Update step with noisy biomass measurement z
+        z = noisy_biomass[k]
+        H = np.array([[1.0, 0.0]])
+        y_residual = z - (H @ np.array([X_pred, S_pred]))[0]
+        S_res = H @ P_pred @ H.T + R
+        K_gain = P_pred @ H.T / S_res[0, 0]
+        
+        updated_state = np.array([X_pred, S_pred]) + K_gain * y_residual
+        x_hat[k] = [max(0, updated_state[0]), max(0, updated_state[1])]
+        P_cov = (np.eye(2) - np.outer(K_gain, H)) @ P_pred
+        
+    return x_hat[:, 0], x_hat[:, 1]
+
 # ==========================================
-# 4. ORGANISM PRESETS & DATABASE ENGINE
+# 4. ORGANISM PRESETS & SIDEBAR
 # ==========================================
 ORGANISM_PRESETS = {
     "E. coli Recombinant Protein": {
         "mu_max": 0.65, "Ks": 0.20, "Ki": 150.0, "Y_xs": 0.50, "Y_ps": 0.18,
         "alpha": 0.12, "beta": 0.02, "X0": 0.15, "S0": 30.0, "batch_time": 18.0,
-        "kla": 180.0, "F_in": 0.05, "S_feed": 200.0
+        "kla": 180.0, "F0": 0.05, "S_feed": 200.0, "T_opt": 37.0, "pH_opt": 7.0,
+        "alpha_A": 0.15, "beta_A": 0.02, "A_crit": 12.0
     },
     "S. cerevisiae (Bioethanol)": {
         "mu_max": 0.42, "Ks": 0.45, "Ki": 80.0, "Y_xs": 0.14, "Y_ps": 0.46,
         "alpha": 0.05, "beta": 0.01, "X0": 0.50, "S0": 110.0, "batch_time": 32.0,
-        "kla": 120.0, "F_in": 0.0, "S_feed": 0.0
+        "kla": 120.0, "F0": 0.0, "S_feed": 0.0, "T_opt": 30.0, "pH_opt": 5.0,
+        "alpha_A": 0.08, "beta_A": 0.01, "A_crit": 85.0
     },
     "CHO Cell Line (mAb Expression)": {
         "mu_max": 0.038, "Ks": 0.12, "Ki": 300.0, "Y_xs": 0.62, "Y_ps": 0.28,
         "alpha": 0.18, "beta": 0.004, "X0": 0.20, "S0": 18.0, "batch_time": 120.0,
-        "kla": 25.0, "F_in": 0.005, "S_feed": 50.0
-    },
-    "Custom / Lab Sandbox": {
-        "mu_max": 0.45, "Ks": 0.25, "Ki": 100.0, "Y_xs": 0.45, "Y_ps": 0.20,
-        "alpha": 0.05, "beta": 0.01, "X0": 0.10, "S0": 25.0, "batch_time": 24.0,
-        "kla": 100.0, "F_in": 0.0, "S_feed": 0.0
+        "kla": 25.0, "F0": 0.005, "S_feed": 50.0, "T_opt": 36.5, "pH_opt": 7.2,
+        "alpha_A": 0.22, "beta_A": 0.005, "A_crit": 5.0
     }
 }
 
-# ==========================================
-# 5. SIDEBAR CONFIGURATION
-# ==========================================
 with st.sidebar:
     st.markdown("### ⚙️ Enterprise Twin Config")
-    st.caption(f"Connected Workspace: **{st.session_state.get('org', 'Default')}**")
+    st.caption(f"Connected Facility: **{st.session_state.get('org', 'Default Facility')}**")
     preset_choice = st.selectbox("Active Strain Profile", list(ORGANISM_PRESETS.keys()))
     preset = ORGANISM_PRESETS[preset_choice]
 
     st.markdown("---")
-    st.markdown("#### Kinetic & Inhibition Parameters")
-    
+    st.markdown("#### Kinetic Parameters")
     default_mu = st.session_state.get('fitted_mu', float(preset["mu_max"]))
     mu_max = st.slider("μ_max (Max Growth Rate, 1/h)", 0.01, 1.50, default_mu, 0.01)
     Ks = st.slider("Ks (Affinity Constant, g/L)", 0.01, 2.00, float(preset["Ks"]), 0.01)
-    Ki = st.number_input("Ki (Haldane Substrate Inhibition, g/L)", 1.0, 1000.0, float(preset["Ki"]))
+    Ki = st.number_input("Ki (Haldane Substrate Inh, g/L)", 1.0, 1000.0, float(preset["Ki"]))
     Y_xs = st.slider("Y_x/s (Biomass Yield, g/g)", 0.05, 0.90, float(preset["Y_xs"]), 0.01)
     Y_ps = st.slider("Y_p/s (Product Yield, g/g)", 0.00, 0.90, float(preset["Y_ps"]), 0.01)
 
     st.markdown("---")
-    st.markdown("#### Fed-Batch & Mass Transfer (kL a)")
-    kla = st.slider("kL a (Mass Transfer Coeff, 1/h)", 5.0, 500.0, float(preset["kla"]))
-    F_in = st.number_input("Substrate Feed Rate F_in (L/h)", 0.0, 5.0, float(preset["F_in"]), 0.01)
-    S_feed = st.number_input("Feed Substrate Conc S_feed (g/L)", 0.0, 1000.0, float(preset["S_feed"]), 10.0)
+    st.markdown("#### 🌡️ Temperature & pH Controls")
+    T_curr = st.slider("Operating Temperature (°C)", 15.0, 45.0, float(preset["T_opt"]), 0.5)
+    pH_curr = st.slider("Operating pH", 3.0, 10.0, float(preset["pH_opt"]), 0.1)
+    T_opt, T_min, T_max = float(preset["T_opt"]), 15.0, 45.0
+    pH_opt, pH_width = float(preset["pH_opt"]), 1.5
+
+    st.markdown("---")
+    st.markdown("#### 🧪 Byproduct Kinetics (Luedeking-Piret)")
+    alpha_A = st.number_input("Growth Byproduct Rate α_A", 0.0, 2.0, float(preset["alpha_A"]), 0.01)
+    beta_A = st.number_input("Non-Growth Byproduct Rate β_A", 0.0, 0.5, float(preset["beta_A"]), 0.001)
+    A_crit = st.number_input("Critical Byproduct Limit A_crit (g/L)", 1.0, 200.0, float(preset["A_crit"]), 1.0)
+
+    st.markdown("---")
+    st.markdown("#### 🚰 Feeding Strategy Policy")
+    feed_policy = st.selectbox("Feed Policy Mode", ["Constant", "Exponential", "DO-Stat"])
+    F0 = st.number_input("Base Feed Rate F0 (L/h)", 0.0, 5.0, float(preset["F0"]), 0.001)
+    mu_set = st.number_input("Target Exponential μ_set (1/h)", 0.01, 0.80, 0.10, 0.01)
+    DO_thresh = st.slider("DO-Stat Trigger Threshold (%)", 10.0, 95.0, 70.0, 5.0)
+    S_feed = st.number_input("Inlet Feed Substrate Conc (g/L)", 0.0, 1000.0, float(preset["S_feed"]), 10.0)
 
     st.markdown("---")
     st.markdown("#### Initial Reactor States")
     X0 = st.number_input("Initial Biomass X₀ (g/L)", 0.01, 50.0, float(preset["X0"]), 0.05)
     S0 = st.number_input("Initial Substrate S₀ (g/L)", 0.1, 500.0, float(preset["S0"]), 1.0)
+    A0 = st.number_input("Initial Byproduct A₀ (g/L)", 0.0, 50.0, 0.0, 0.1)
+    kla = st.slider("kL a (1/h)", 5.0, 500.0, float(preset["kla"]))
     batch_time = st.slider("Batch Duration (Hours)", 4.0, 200.0, float(preset["batch_time"]), 1.0)
-
     alpha, beta = preset["alpha"], preset["beta"]
 
 # ==========================================
-# 6. EXECUTE SIMULATION & METRICS
+# 5. SIMULATION & METRICS EXECUTION
 # ==========================================
-sim_df, success = run_advanced_simulation(
-    X0, S0, 0.0, 7.0, 1.0, mu_max, Ks, Ki, Y_xs, Y_ps, alpha, beta, 
-    kla, 7.0, 0.15, F_in, S_feed, batch_time
+sim_df, success = run_v4_simulation(
+    X0, S0, 0.0, A0, 7.0, 1.0, mu_max, Ks, Ki, Y_xs, Y_ps, alpha, beta, kla, 7.0, 0.15,
+    T_curr, T_opt, T_min, T_max, pH_curr, pH_opt, pH_width,
+    alpha_A, beta_A, A_crit, feed_policy, F0, mu_set, DO_thresh, S_feed, batch_time
 )
 
 if not success or sim_df.empty:
-    st.error("⚠️ ODE Solver Numerical Instability. Verify kinetic constants.")
+    st.error("⚠️ Differential Equation Convergence Error. Adjust kinetic parameters.")
     st.stop()
 
 final_X = sim_df['Biomass X (g/L)'].iloc[-1]
 final_P = sim_df['Product P (g/L)'].iloc[-1]
+final_A = sim_df['Byproduct A (g/L)'].iloc[-1]
 final_V = sim_df['Reactor Volume V (L)'].iloc[-1]
 min_DO = sim_df['Dissolved Oxygen DO (mg/L)'].min()
-consumed_S = (S0 + (F_in * S_feed * batch_time)) - sim_df['Substrate S (g/L)'].iloc[-1]
 vol_prod = (final_P * final_V) / batch_time if batch_time > 0 else 0
-overall_yield = (final_P / consumed_S) if consumed_S > 0 else 0
 
 # ==========================================
-# 7. HEADER & KPI DASHBOARD
+# 6. HEADER & KPI DASHBOARD
 # ==========================================
 st.markdown(f"""
 <div class="brand-header">
     <div class="brand-title">
         <span>🧬 BioTwin Pro</span>
-        <span class="brand-badge">Enterprise v3.0</span>
+        <span class="brand-badge">Enterprise v4.0</span>
     </div>
-    <div style="font-size: 0.85rem; opacity: 0.8;">
-        Strain: <b>{preset_choice}</b> | Mode: <b>{'Fed-Batch' if F_in > 0 else 'Batch'}</b> | System Status: <span style="color:#0D9488; font-weight:700;">● Engine Operational</span>
+    <div style="font-size: 0.85rem; opacity: 0.85;">
+        User: <b>{st.session_state.get('username', 'Operator')}</b> | Strain: <b>{preset_choice}</b> | Strategy: <b>{feed_policy}</b>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -364,86 +418,111 @@ st.markdown(f"""
 <div class="kpi-container">
     <div class="kpi-card" style="border-left-color: #0D9488;">
         <div class="kpi-label">Final Biomass (X)</div>
-        <div class="kpi-value">{final_X:.2f} <span style="font-size:0.9rem;">g/L</span></div>
+        <div class="kpi-value">{final_X:.2f} <span style="font-size:0.85rem;">g/L</span></div>
     </div>
     <div class="kpi-card" style="border-left-color: #0284C7;">
-        <div class="kpi-label">Final Product (P)</div>
-        <div class="kpi-value" style="color: #0284C7;">{final_P:.2f} <span style="font-size:0.9rem;">g/L</span></div>
+        <div class="kpi-label">Target Product (P)</div>
+        <div class="kpi-value" style="color: #0284C7;">{final_P:.2f} <span style="font-size:0.85rem;">g/L</span></div>
     </div>
-    <div class="kpi-card" style="border-left-color: #D97706;">
-        <div class="kpi-label">Volumetric Productivity</div>
-        <div class="kpi-value">{vol_prod:.3f} <span style="font-size:0.9rem;">g/h</span></div>
+    <div class="kpi-card" style="border-left-color: #E11D48;">
+        <div class="kpi-label">Toxic Byproduct (A)</div>
+        <div class="kpi-value" style="color: {'#E11D48' if final_A > A_crit*0.7 else '#0D9488'};">{final_A:.2f} <span style="font-size:0.85rem;">g/L</span></div>
     </div>
     <div class="kpi-card" style="border-left-color: #8B5CF6;">
-        <div class="kpi-label">Min Dissolved O₂</div>
-        <div class="kpi-value" style="color: {'#E11D48' if min_DO < 1.0 else '#0D9488'};">{min_DO:.2f} <span style="font-size:0.9rem;">mg/L</span></div>
+        <div class="kpi-label">Volumetric Productivity</div>
+        <div class="kpi-value">{vol_prod:.3f} <span style="font-size:0.85rem;">g/h</span></div>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 8. TAB WORKFLOW SYSTEM
+# 7. WORKFLOW TABS
 # ==========================================
-tab_twin, tab_fitting, tab_sensitivity, tab_report = st.tabs([
+tab_twin, tab_ekf, tab_fitting, tab_report = st.tabs([
     "📈 Dynamic Digital Twin",
+    "📡 Telemetry & EKF State Estimator",
     "🔬 Parameter Estimation Engine",
-    "🎯 Response Surface Sweep",
-    "📄 Report Generator & Export"
+    "📄 Report Generator & Audit"
 ])
 
-# --- TAB 1: DIGITAL TWIN ---
+# --- TAB 1: DIGITAL TWIN VISUALIZATION ---
 with tab_twin:
     col_chart, col_stats = st.columns([3, 1])
     with col_chart:
         fig = make_subplots(specs=[[{"secondary_y": True}]])
         
         fig.add_trace(go.Scatter(x=sim_df['Time (hr)'], y=sim_df['Biomass X (g/L)'], name="Biomass (X)", line=dict(color="#0D9488", width=3.5)), secondary_y=False)
-        fig.add_trace(go.Scatter(x=sim_df['Time (hr)'], y=sim_df['Substrate S (g/L)'], name="Substrate (S)", line=dict(color="#E11D48", width=2.5, dash='dash')), secondary_y=False)
+        fig.add_trace(go.Scatter(x=sim_df['Time (hr)'], y=sim_df['Substrate S (g/L)'], name="Substrate (S)", line=dict(color="#D97706", width=2.5, dash='dash')), secondary_y=False)
+        fig.add_trace(go.Scatter(x=sim_df['Time (hr)'], y=sim_df['Byproduct A (g/L)'], name="Byproduct (Acetate/Lactate)", line=dict(color="#E11D48", width=2.5)), secondary_y=False)
         fig.add_trace(go.Scatter(x=sim_df['Time (hr)'], y=sim_df['Product P (g/L)'], name="Product (P)", line=dict(color="#0284C7", width=3.5)), secondary_y=True)
         fig.add_trace(go.Scatter(x=sim_df['Time (hr)'], y=sim_df['Dissolved Oxygen DO (mg/L)'], name="Dissolved O₂", line=dict(color="#8B5CF6", width=2, dash='dot')), secondary_y=True)
 
-        fig.update_layout(template="none", height=480, hovermode="x unified", legend=dict(orientation="h", y=1.08, x=1, xanchor="right"))
+        fig.update_layout(template="none", height=500, hovermode="x unified", legend=dict(orientation="h", y=1.08, x=1, xanchor="right"))
         grid_style = dict(showgrid=True, gridcolor="rgba(128, 128, 128, 0.2)")
-        fig.update_xaxes(title_text="<b>Duration (Hours)</b>", **grid_style)
-        fig.update_yaxes(title_text="<b>Biomass & Substrate (g/L)</b>", secondary_y=False, **grid_style)
+        fig.update_xaxes(title_text="<b>Batch Time (Hours)</b>", **grid_style)
+        fig.update_yaxes(title_text="<b>Biomass, Substrate & Byproduct (g/L)</b>", secondary_y=False, **grid_style)
         fig.update_yaxes(title_text="<b>Product (g/L) / DO (mg/L)</b>", secondary_y=True, **grid_style)
 
         st.plotly_chart(fig, use_container_width=True)
 
     with col_stats:
+        st.markdown("#### Environmental Stress")
+        gamma_T_val = temp_factor(T_curr, T_opt, T_min, T_max)
+        gamma_pH_val = ph_factor(pH_curr, pH_opt, pH_width)
+        st.progress(gamma_T_val, text=f"Temperature Efficiency: {gamma_T_val*100:.1f}%")
+        st.progress(gamma_pH_val, text=f"pH Efficiency: {gamma_pH_val*100:.1f}%")
+        
         st.markdown("#### Reactor Status")
         st.markdown(f"""
         **Working Volume:** `{final_V:.2f} L`  
-        **Substrate Consumed:** `{consumed_S:.1f} g`  
-        **Oxygen Limitation:** `{'CRITICAL' if min_DO < 1.0 else 'Optimal'}`  
+        **Inhibition Stress:** `{(1 - final_A/A_crit)*100:.1f}% capacity`  
+        **Min DO Warning:** `{'CRITICAL' if min_DO < 1.0 else 'Optimal'}`  
         """)
-        st.download_button(
-            "📥 Export Simulation Data",
-            sim_df.to_csv(index=False),
-            f"BioTwin_Enterprise_Run_{preset_choice.replace(' ', '_')}.csv",
-            "text/csv",
-            use_container_width=True
-        )
+        st.download_button("📥 Export Simulation Data (CSV)", sim_df.to_csv(index=False), "BioTwin_v4_Run.csv", "text/csv", use_container_width=True)
 
-# --- TAB 2: PARAMETER ESTIMATION ---
-with tab_fitting:
+# --- TAB 2: TELEMETRY & EXTENDED KALMAN FILTER ---
+with tab_ekf:
     st.markdown("""
     <div class="section-banner">
-        <h4>🔬 Non-Linear Regression & Parameter Fitting Engine</h4>
-        <p>Upload laboratory CSVs or paste raw run data to regress kinetic rates using SciPy's Levenberg-Marquardt optimizer.</p>
+        <h4>📡 Live Sensor Telemetry & Extended Kalman Filter (EKF) State Estimator</h4>
+        <p>Incorporate live noisy optical density (OD) sensor feeds. The EKF filters signal noise and reconstructs unmeasured hidden variables (Substrate Concentration S).</p>
     </div>
     """, unsafe_allow_html=True)
     
-    input_mode = st.radio("Choose Input Method:", ["📄 Upload CSV File", "✍️ Paste Raw Text / Excel Data"], horizontal=True)
+    t_sensor = sim_df['Time (hr)'].values
+    true_x = sim_df['Biomass X (g/L)'].values
+    
+    # Generate synthetic noisy sensor readings
+    np.random.seed(42)
+    noisy_sensor_x = np.maximum(0, true_x + np.random.normal(0, 0.35, len(true_x)))
+    
+    # Run Extended Kalman Filter
+    est_x, est_s = run_extended_kalman_filter(t_sensor, noisy_sensor_x, noisy_DO=None)
+    
+    fig_ekf = make_subplots(rows=1, cols=2, subplot_titles=("Biomass State Estimation (Filtering Sensor Noise)", "Reconstructed Substrate Concentration S(t)"))
+    
+    fig_ekf.add_trace(go.Scatter(x=t_sensor, y=noisy_sensor_x, mode='markers', name='Noisy OD Sensor Stream', marker=dict(color='#E11D48', size=5, opacity=0.6)), row=1, col=1)
+    fig_ekf.add_trace(go.Scatter(x=t_sensor, y=est_x, mode='lines', name='EKF Filtered State', line=dict(color='#0D9488', width=3)), row=1, col=1)
+    
+    fig_ekf.add_trace(go.Scatter(x=t_sensor, y=sim_df['Substrate S (g/L)'], mode='lines', name='True Substrate', line=dict(color='#D97706', dash='dash')), row=1, col=2)
+    fig_ekf.add_trace(go.Scatter(x=t_sensor, y=est_s, mode='lines', name='EKF Reconstructed Substrate S(t)', line=dict(color='#0284C7', width=3)), row=1, col=2)
+    
+    fig_ekf.update_layout(template="none", height=420)
+    st.plotly_chart(fig_ekf, use_container_width=True)
+
+# --- TAB 3: PARAMETER ESTIMATION ---
+with tab_fitting:
+    st.markdown("#### 🔬 Non-Linear Regression & Parameter Fitting Engine")
+    input_mode = st.radio("Choose Input Method:", ["📄 Upload CSV File", "✍️ Paste Raw Text Data"], horizontal=True)
     exp_df = None
     
     if input_mode == "📄 Upload CSV File":
         uploaded_file = st.file_uploader("Select Fermentation Run CSV", type=["csv", "txt"])
         if uploaded_file is not None:
             try: exp_df = pd.read_csv(uploaded_file)
-            except Exception as e: st.error(f"Error: {e}")
+            except Exception as e: st.error(f"Error reading file: {e}")
     else:
-        raw_text = st.text_area("Paste Tabular Data:", height=140, placeholder="Time,Biomass,Substrate\n0,0.15,30.0\n2,0.32,28.5")
+        raw_text = st.text_area("Paste Tabular Data:", height=120, placeholder="Time,Biomass,Substrate\n0,0.15,30.0\n2,0.32,28.5")
         if raw_text.strip():
             try:
                 sep = '\t' if '\t' in raw_text else ','
@@ -457,7 +536,7 @@ with tab_fitting:
             'Substrate': [30.0, 28.5, 25.1, 19.8, 12.0, 3.2, 0.5, 0.1, 0.0]
         })
 
-    st.dataframe(exp_df, height=140, use_container_width=True)
+    st.dataframe(exp_df, height=130, use_container_width=True)
 
     if 'Time' in exp_df.columns and 'Biomass' in exp_df.columns:
         try:
@@ -479,45 +558,30 @@ with tab_fitting:
                     st.rerun()
 
             fig_fit = go.Figure()
-            fig_fit.add_trace(go.Scatter(x=t_data, y=x_data, mode='markers', name='Lab Data', marker=dict(size=9, color='#E11D48')))
+            fig_fit.add_trace(go.Scatter(x=t_data, y=x_data, mode='markers', name='Lab Points', marker=dict(size=8, color='#E11D48')))
             t_smooth = np.linspace(0, max(t_data), 100)
             fig_fit.add_trace(go.Scatter(x=t_smooth, y=fit_growth(t_smooth, *popt), mode='lines', name='Regressed Fit', line=dict(color='#0D9488', dash='dash')))
-            fig_fit.update_layout(template="none", height=320, title="<b>Experimental Points vs Fitted Growth Model</b>")
+            fig_fit.update_layout(template="none", height=320)
             st.plotly_chart(fig_fit, use_container_width=True)
         except Exception as e: st.error(f"Regression error: {e}")
 
-# --- TAB 3: RESPONSE SURFACE ---
-with tab_sensitivity:
-    st.markdown("#### 🎯 Multi-Parameter Yield Optimization Surface")
-    res = st.slider("Sweep Grid Resolution", 4, 12, 6)
-    mu_range = np.linspace(0.05, 1.0, res)
-    S0_range = np.linspace(10.0, 150.0, res)
-    matrix = np.zeros((len(S0_range), len(mu_range)))
-    
-    for i, s_val in enumerate(S0_range):
-        for j, m_val in enumerate(mu_range):
-            r_df, _ = run_advanced_simulation(X0, s_val, 0.0, 7.0, 1.0, m_val, Ks, Ki, Y_xs, Y_ps, alpha, beta, kla, 7.0, 0.15, F_in, S_feed, batch_time)
-            matrix[i, j] = r_df['Product P (g/L)'].iloc[-1] if not r_df.empty else 0
-            
-    fig_sens = go.Figure(data=go.Heatmap(z=matrix, x=np.round(mu_range, 2), y=np.round(S0_range, 1), colorscale='Tealgrn'))
-    fig_sens.update_layout(template="none", height=400, xaxis_title="μ_max (1/h)", yaxis_title="Initial Substrate S₀ (g/L)")
-    st.plotly_chart(fig_sens, use_container_width=True)
-
-# --- TAB 4: COMPLIANCE REPORT GENERATOR ---
+# --- TAB 4: REPORT GENERATOR ---
 with tab_report:
     st.markdown("#### 📄 Executive Batch Verification Audit Report")
     report_html = f"""
     <div style="background:#FFF; color:#000; padding:24px; border:1px solid #CCC; font-family:sans-serif;">
-        <h2 style="color:#0284C7; margin-0;">BioTwin Enterprise Audit Report</h2>
-        <p><b>Facility:</b> {st.session_state.get('org', 'Default Facility')} | <b>Date:</b> {datetime.datetime.now().strftime('%Y-%m-%d')}</p>
+        <h2 style="color:#0284C7; margin:0;">BioTwin Enterprise Audit Certificate</h2>
+        <p><b>Facility:</b> {st.session_state.get('org', 'Default Facility')} | <b>Operator:</b> {st.session_state.get('username', 'Operator')} | <b>Date:</b> {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
         <hr/>
         <ul>
             <li><b>Strain Profile:</b> {preset_choice}</li>
-            <li><b>Final Yield (P):</b> {final_P:.2f} g/L</li>
-            <li><b>Total Volume (V):</b> {final_V:.2f} L</li>
+            <li><b>Feeding Strategy:</b> {feed_policy} (Base F0: {F0} L/h)</li>
+            <li><b>Environmental Conditions:</b> {T_curr}°C | pH {pH_curr}</li>
+            <li><b>Final Yield (Product P):</b> {final_P:.2f} g/L</li>
+            <li><b>Toxic Byproduct Accumulation (A):</b> {final_A:.2f} g/L (Critical Limit: {A_crit} g/L)</li>
             <li><b>Volumetric Mass Transfer (kL a):</b> {kla} h⁻¹</li>
         </ul>
     </div>
     """
-    st.components.v1.html(report_html, height=220)
-    st.download_button("📥 Download HTML Compliance Certificate", report_html, "BioTwin_Batch_Audit.html", "text/html", use_container_width=True)
+    st.components.v1.html(report_html, height=260)
+    st.download_button("📥 Download HTML Compliance Certificate", report_html, "BioTwin_v4_Batch_Certificate.html", "text/html", use_container_width=True)
