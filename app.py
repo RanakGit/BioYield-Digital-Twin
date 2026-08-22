@@ -319,9 +319,8 @@ def run_extended_kalman_filter(time_pts, noisy_biomass, noisy_DO=None, q_noise=0
         P_cov = (np.eye(2) - K_gain @ H) @ P_pred
         
     return x_hat[:, 0], x_hat[:, 1]
-
 # ==========================================
-# 4. ORGANISM PRESETS & SIDEBAR
+# 4. ORGANISM PRESETS & SIDEBAR CONFIG
 # ==========================================
 ORGANISM_PRESETS = {
     "E. coli Recombinant Protein": {
@@ -341,8 +340,10 @@ ORGANISM_PRESETS = {
         "alpha": 0.18, "beta": 0.004, "X0": 0.20, "S0": 18.0, "batch_time": 120.0,
         "kla": 25.0, "F0": 0.005, "S_feed": 50.0, "T_opt": 36.5, "pH_opt": 7.2,
         "alpha_A": 0.22, "beta_A": 0.005, "A_crit": 5.0
-    },
-    with st.sidebar:
+    }
+}  
+
+with st.sidebar:
     st.markdown("### ⚙️ Enterprise Twin Config")
     st.caption(f"Connected Facility: **{st.session_state.get('org', 'Default Facility')}**")
     
