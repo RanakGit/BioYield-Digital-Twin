@@ -15,7 +15,7 @@ import math
 # 1. PAGE & INDUSTRIAL DESIGN SYSTEM (CSS)
 # ==========================================
 st.set_page_config(
-    page_title="BioTwin Pro Enterprise v4.0",
+    page_title="FermentIQ | Bioprocess Digital Twin & Telemetry",
     page_icon="🧬",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -101,7 +101,7 @@ st.markdown("""
 # 2. AUTHENTICATION & DATABASE SYSTEM
 # ==========================================
 def init_user_db():
-    conn = sqlite3.connect("biotwin_users.db")
+    conn = sqlite3.connect("fermentiq_users.db")
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
@@ -121,7 +121,7 @@ def hash_password(password: str) -> str:
 def register_user(username: str, facility: str, password: str) -> tuple[bool, str]:
     if not username.strip() or not password.strip():
         return False, "Username and password cannot be empty."
-    conn = sqlite3.connect("biotwin_users.db")
+    conn = sqlite3.connect("fermentiq_users.db")
     cursor = conn.cursor()
     try:
         hashed = hash_password(password)
@@ -135,7 +135,7 @@ def register_user(username: str, facility: str, password: str) -> tuple[bool, st
         return False, "Username already exists. Please choose another or Log In."
 
 def authenticate_user(username: str, password: str) -> tuple[bool, str, str]:
-    conn = sqlite3.connect("biotwin_users.db")
+    conn = sqlite3.connect("fermentiq_users.db")
     cursor = conn.cursor()
     cursor.execute("SELECT facility, password_hash FROM users WHERE username = ?", (username.strip().lower(),))
     row = cursor.fetchone()
@@ -149,12 +149,16 @@ def authenticate_user(username: str, password: str) -> tuple[bool, str, str]:
 
 init_user_db()
 
+# Session State Initialization
 if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
+if 'onboarded' not in st.session_state:
+    st.session_state['onboarded'] = False
 
+# --- LOGIN / SIGNUP SCREEN ---
 if not st.session_state['authenticated']:
-    st.markdown("## 🧬 Welcome to BioTwin Pro Enterprise")
-    st.caption("Access the Bioprocess Digital Twin & Physical Simulation Engine")
+    st.markdown("## 🧬 Welcome to FermentIQ")
+    st.caption("Next-Generation Bioprocess Digital Twin, EKF Telemetry & Simulation Platform")
     
     auth_tab1, auth_tab2 = st.tabs(["🔒 Log In", "📝 Sign Up (New Account)"])
     
@@ -169,7 +173,7 @@ if not st.session_state['authenticated']:
                     st.session_state['authenticated'] = True
                     st.session_state['username'] = login_user.strip().lower()
                     st.session_state['org'] = facility
-                    st.success("Authorized! Loading Digital Twin...")
+                    st.success("Authorized! Loading FermentIQ Workspace...")
                     st.rerun()
                 else:
                     st.error(msg)
@@ -192,6 +196,35 @@ if not st.session_state['authenticated']:
                     else: st.error(msg)
     st.stop()
 
+# --- PROFESSIONAL ONBOARDING FLOW ---
+if st.session_state['authenticated'] and not st.session_state['onboarded']:
+    st.markdown("## 🚀 Welcome to FermentIQ — Let's Setup Your Profile")
+    st.caption("Tell us a bit about yourself so we can customize your simulation experience.")
+    
+    with st.form("onboarding_form"):
+        user_role = st.selectbox(
+            "What best describes your current role?",
+            ["Student / Undergraduate", "Academic Researcher / Professor", "Industrial Bioprocess Engineer", "Startup Founder / R&D Scientist", "Other"]
+        )
+        primary_goal = st.selectbox(
+            "What is your primary objective with FermentIQ?",
+            ["Learning bioprocess kinetics and math modeling", "Simulating and optimizing fed-batch strategies", "Fitting lab data and parameter estimation", "Generating compliance audit reports"]
+        )
+        experience_level = st.select_slider(
+            "Your familiarity with Bioprocess Engineering & Fermentation:",
+            options=["Beginner", "Intermediate", "Advanced / Expert"]
+        )
+        
+        onboard_btn = st.form_submit_button("Enter FermentIQ Workspace 🚀", use_container_width=True)
+        if onboard_btn:
+            st.session_state['user_role'] = user_role
+            st.session_state['primary_goal'] = primary_goal
+            st.session_state['experience_level'] = experience_level
+            st.session_state['onboarded'] = True
+            st.success("Configuration saved! Launching dashboard...")
+            st.rerun()
+    st.stop()
+
 # ==========================================
 # 3. EXTENDED PHYSICS & KINETICS ENGINE
 # ==========================================
@@ -204,23 +237,20 @@ def temp_factor(T, T_opt, T_min, T_max):
 def ph_factor(pH, pH_opt, width):
     return math.exp(-((pH - pH_opt) / width)**2)
 
-def enterprise_v4_model(y, t, mu_max, Ks, Ki, Y_xs, Y_ps, alpha, beta, kla, C_star, q_O2,
-                        T_curr, T_opt, T_min, T_max, pH_curr, pH_opt, pH_width,
-                        alpha_A, beta_A, A_crit,
-                        feed_policy, F0, mu_set, DO_thresh, S_feed):
+def fermentiq_v4_model(y, t, mu_max, Ks, Ki, Y_xs, Y_ps, alpha, beta, kla, C_star, q_O2,
+                       T_curr, T_opt, T_min, T_max, pH_curr, pH_opt, pH_width,
+                       alpha_A, beta_A, A_crit,
+                       feed_policy, F0, mu_set, DO_thresh, S_feed):
     
     X, S, P, A, DO, V = max(0, y[0]), max(0, y[1]), max(0, y[2]), max(0, y[3]), max(0, y[4]), max(1e-3, y[5])
     
-    # 1. Environmental & Byproduct Adjustments
     g_T = temp_factor(T_curr, T_opt, T_min, T_max)
     g_pH = ph_factor(pH_curr, pH_opt, pH_width)
     byproduct_inh = max(0.0, 1.0 - (A / A_crit)) if A_crit > 0 else 1.0
     
-    # 2. Kinetic Specific Growth Rate
     mu_base = mu_max * S / (Ks + S + ((S**2) / Ki)) if S > 0 else 0.0
     mu_eff = mu_base * g_T * g_pH * byproduct_inh
     
-    # 3. Dynamic Feeding Control Logic
     if feed_policy == "Exponential":
         F_in = F0 * math.exp(mu_set * t)
     elif feed_policy == "DO-Stat":
@@ -231,11 +261,10 @@ def enterprise_v4_model(y, t, mu_max, Ks, Ki, Y_xs, Y_ps, alpha, beta, kla, C_st
         
     D = F_in / V
     
-    # 4. Differential Equations
     dXdt = (mu_eff - D) * X
     dSdt = D * (S_feed - S) - ((1.0 / Y_xs) * mu_eff * X) if S > 0 else D * (S_feed - S)
     dPdt = -D * P + (Y_ps * mu_eff * X) + (alpha * mu_eff * X) + (beta * X)
-    dAdt = -D * A + (alpha_A * mu_eff * X) + (beta_A * X)  # Luedeking-Piret Byproduct
+    dAdt = -D * A + (alpha_A * mu_eff * X) + (beta_A * X)
     
     OTR = kla * (C_star - DO)
     OUR = q_O2 * X * 1000.0
@@ -245,14 +274,14 @@ def enterprise_v4_model(y, t, mu_max, Ks, Ki, Y_xs, Y_ps, alpha, beta, kla, C_st
     return [dXdt, dSdt, dPdt, dAdt, dDOdt, dVdt]
 
 @st.cache_data(ttl=3600)
-def run_v4_simulation(X0, S0, P0, A0, DO0, V0, mu_max, Ks, Ki, Y_xs, Y_ps, alpha, beta, kla, C_star, q_O2,
-                       T_curr, T_opt, T_min, T_max, pH_curr, pH_opt, pH_width,
-                       alpha_A, beta_A, A_crit,
-                       feed_policy, F0, mu_set, DO_thresh, S_feed, batch_time, n_points=300):
+def run_fermentiq_simulation(X0, S0, P0, A0, DO0, V0, mu_max, Ks, Ki, Y_xs, Y_ps, alpha, beta, kla, C_star, q_O2,
+                             T_curr, T_opt, T_min, T_max, pH_curr, pH_opt, pH_width,
+                             alpha_A, beta_A, A_crit,
+                             feed_policy, F0, mu_set, DO_thresh, S_feed, batch_time, n_points=300):
     t = np.linspace(0, batch_time, n_points)
     try:
         sol = odeint(
-            enterprise_v4_model, [X0, S0, P0, A0, DO0, V0], t,
+            fermentiq_v4_model, [X0, S0, P0, A0, DO0, V0], t,
             args=(mu_max, Ks, Ki, Y_xs, Y_ps, alpha, beta, kla, C_star, q_O2,
                   T_curr, T_opt, T_min, T_max, pH_curr, pH_opt, pH_width,
                   alpha_A, beta_A, A_crit, feed_policy, F0, mu_set, DO_thresh, S_feed)
@@ -269,30 +298,23 @@ def run_v4_simulation(X0, S0, P0, A0, DO0, V0, mu_max, Ks, Ki, Y_xs, Y_ps, alpha
     except Exception as e:
         return pd.DataFrame(), False
 
-# --- EXTENDED KALMAN FILTER (EKF) FOR SENSOR TELEMETRY ---
-def run_extended_kalman_filter(time_pts, noisy_biomass, noisy_DO=None, q_noise=0.01, r_noise=0.15):
-    """
-    EKF State Estimator: Filters sensor noise and estimates hidden substrate state S(t)
-    """
+def run_extended_kalman_filter(time_pts, noisy_biomass, q_noise=0.01, r_noise=0.15):
     n = len(time_pts)
-    x_hat = np.zeros((n, 2))  # [Biomass_est, Substrate_est]
-    x_hat[0] = [noisy_biomass[0], 25.0]  # Initial state guess
+    x_hat = np.zeros((n, 2))
+    x_hat[0] = [noisy_biomass[0], 25.0]
     P_cov = np.eye(2) * 0.1
     Q = np.eye(2) * q_noise
     R = np.eye(1) * r_noise
     
     for k in range(1, n):
         dt = time_pts[k] - time_pts[k-1]
-        if dt <= 0:
-            dt = 1e-4  # Prevent zero division if timestamps duplicate
+        if dt <= 0: dt = 1e-4
             
-        # 1. Predict step
         X_prev, S_prev = x_hat[k-1]
         mu_est = 0.45 * S_prev / (0.25 + S_prev) if S_prev > 0 else 0.0
         X_pred = X_prev + (mu_est * X_prev) * dt
         S_pred = max(0.0, S_prev - (1.0 / 0.45) * mu_est * X_prev * dt)
         
-        # 2. Linearize Jacobian F
         den = (0.25 + S_prev)**2
         dmu_dS = (0.45 * 0.25 / den) if den > 0 else 0.0
         
@@ -302,16 +324,13 @@ def run_extended_kalman_filter(time_pts, noisy_biomass, noisy_DO=None, q_noise=0
         ])
         
         P_pred = F_mat @ P_cov @ F_mat.T + Q
-        
-        # 3. Update step with noisy biomass measurement z
         z = noisy_biomass[k]
         H = np.array([[1.0, 0.0]])
         y_residual = float(z - (H @ np.array([X_pred, S_pred]))[0])
         
         S_res = (H @ P_pred @ H.T) + R
-        K_gain = (P_pred @ H.T) / S_res[0, 0]  # Shape (2, 1)
+        K_gain = (P_pred @ H.T) / S_res[0, 0]
         
-        # Flatten vector operation to avoid dimensional mismatch in Python max()
         correction = (K_gain.flatten() * y_residual)
         updated_state = np.array([X_pred, S_pred]) + correction
         
@@ -319,6 +338,7 @@ def run_extended_kalman_filter(time_pts, noisy_biomass, noisy_DO=None, q_noise=0
         P_cov = (np.eye(2) - K_gain @ H) @ P_pred
         
     return x_hat[:, 0], x_hat[:, 1]
+
 # ==========================================
 # 4. ORGANISM PRESETS & SIDEBAR CONFIG
 # ==========================================
@@ -344,22 +364,12 @@ ORGANISM_PRESETS = {
 }  
 
 with st.sidebar:
-    st.markdown("### ⚙️ Enterprise Twin Config")
-    st.caption(f"Connected Facility: **{st.session_state.get('org', 'Default Facility')}**")
+    st.markdown("### ⚙️ FermentIQ Control Center")
+    st.caption(f"Facility: **{st.session_state.get('org', 'Default Facility')}**")
+    st.caption(f"User Role: **{st.session_state.get('user_role', 'Engineer')}**")
     
-    # --- CUSTOM STRAIN & ENTERPRISE OVERRIDE ---
-    use_custom_strain = st.checkbox("✍️ Enter Custom Strain / Strain ID", value=False)
-    
-    if use_custom_strain:
-        custom_strain_name = st.text_input("Custom Strain / Organism Name", "Wild-Type E. coli K-12")
-        custom_strain_id = st.text_input("Batch / Lot ID", "LOT-2026-0822-X")
-        custom_target_product = st.text_input("Target Molecule / Product", "Therapeutic Protein B")
-        preset_choice = f"{custom_strain_name} ({custom_strain_id})"
-        preset = ORGANISM_PRESETS["E. coli Recombinant Protein"]  # Default baseline parameters
-    else:
-        preset_choice = st.selectbox("Active Strain Profile", list(ORGANISM_PRESETS.keys()))
-        preset = ORGANISM_PRESETS[preset_choice]
-        custom_target_product = "Target Biomaterial / Recombinant Product"
+    preset_choice = st.selectbox("Active Strain Profile", list(ORGANISM_PRESETS.keys()))
+    preset = ORGANISM_PRESETS[preset_choice]
 
     st.markdown("---")
     st.markdown("#### Kinetic Parameters")
@@ -378,7 +388,7 @@ with st.sidebar:
     pH_opt, pH_width = float(preset["pH_opt"]), 1.5
 
     st.markdown("---")
-    st.markdown("#### 🧪 Byproduct Kinetics (Luedeking-Piret)")
+    st.markdown("#### 🧪 Byproduct Kinetics")
     alpha_A = st.number_input("Growth Byproduct Rate α_A", 0.0, 2.0, float(preset["alpha_A"]), 0.01)
     beta_A = st.number_input("Non-Growth Byproduct Rate β_A", 0.0, 0.5, float(preset["beta_A"]), 0.001)
     A_crit = st.number_input("Critical Byproduct Limit A_crit (g/L)", 1.0, 200.0, float(preset["A_crit"]), 1.0)
@@ -399,10 +409,11 @@ with st.sidebar:
     kla = st.slider("kL a (1/h)", 5.0, 500.0, float(preset["kla"]))
     batch_time = st.slider("Batch Duration (Hours)", 4.0, 200.0, float(preset["batch_time"]), 1.0)
     alpha, beta = preset["alpha"], preset["beta"]
+
 # ==========================================
 # 5. SIMULATION & METRICS EXECUTION
 # ==========================================
-sim_df, success = run_v4_simulation(
+sim_df, success = run_fermentiq_simulation(
     X0, S0, 0.0, A0, 7.0, 1.0, mu_max, Ks, Ki, Y_xs, Y_ps, alpha, beta, kla, 7.0, 0.15,
     T_curr, T_opt, T_min, T_max, pH_curr, pH_opt, pH_width,
     alpha_A, beta_A, A_crit, feed_policy, F0, mu_set, DO_thresh, S_feed, batch_time
@@ -425,7 +436,7 @@ vol_prod = (final_P * final_V) / batch_time if batch_time > 0 else 0
 st.markdown(f"""
 <div class="brand-header">
     <div class="brand-title">
-        <span>🧬 BioTwin Pro</span>
+        <span>🧬 FermentIQ</span>
         <span class="brand-badge">Enterprise v4.0</span>
     </div>
     <div style="font-size: 0.85rem; opacity: 0.85;">
@@ -462,7 +473,7 @@ tab_twin, tab_ekf, tab_fitting, tab_report = st.tabs([
     "📈 Dynamic Digital Twin",
     "📡 Telemetry & EKF State Estimator",
     "🔬 Parameter Estimation Engine",
-    "📄 Report Generator & Audit"
+    "📄 Audit Report & Compliance"
 ])
 
 # --- TAB 1: DIGITAL TWIN VISUALIZATION ---
@@ -498,28 +509,25 @@ with tab_twin:
         **Inhibition Stress:** `{(1 - final_A/A_crit)*100:.1f}% capacity`  
         **Min DO Warning:** `{'CRITICAL' if min_DO < 1.0 else 'Optimal'}`  
         """)
-        st.download_button("📥 Export Simulation Data (CSV)", sim_df.to_csv(index=False), "BioTwin_v4_Run.csv", "text/csv", use_container_width=True)
+        st.download_button("📥 Export Simulation Data (CSV)", sim_df.to_csv(index=False), "FermentIQ_Run.csv", "text/csv", use_container_width=True)
 
 # --- TAB 2: TELEMETRY & EXTENDED KALMAN FILTER ---
 with tab_ekf:
     st.markdown("""
     <div class="section-banner">
         <h4>📡 Live Sensor Telemetry & Extended Kalman Filter (EKF) State Estimator</h4>
-        <p>Incorporate live noisy optical density (OD) sensor feeds. The EKF filters signal noise and reconstructs unmeasured hidden variables (Substrate Concentration S).</p>
+        <p>Incorporate noisy optical density (OD) sensor feeds. The EKF filters signal noise and reconstructs unmeasured hidden variables (Substrate Concentration S).</p>
     </div>
     """, unsafe_allow_html=True)
     
     t_sensor = sim_df['Time (hr)'].values
     true_x = sim_df['Biomass X (g/L)'].values
     
-    # Generate synthetic noisy sensor readings
     np.random.seed(42)
     noisy_sensor_x = np.maximum(0, true_x + np.random.normal(0, 0.35, len(true_x)))
+    est_x, est_s = run_extended_kalman_filter(t_sensor, noisy_sensor_x)
     
-    # Run Extended Kalman Filter
-    est_x, est_s = run_extended_kalman_filter(t_sensor, noisy_sensor_x, noisy_DO=None)
-    
-    fig_ekf = make_subplots(rows=1, cols=2, subplot_titles=("Biomass State Estimation (Filtering Sensor Noise)", "Reconstructed Substrate Concentration S(t)"))
+    fig_ekf = make_subplots(rows=1, cols=2, subplot_titles=("Biomass State Estimation (Sensor Filtering)", "Reconstructed Substrate Concentration S(t)"))
     
     fig_ekf.add_trace(go.Scatter(x=t_sensor, y=noisy_sensor_x, mode='markers', name='Noisy OD Sensor Stream', marker=dict(color='#E11D48', size=5, opacity=0.6)), row=1, col=1)
     fig_ekf.add_trace(go.Scatter(x=t_sensor, y=est_x, mode='lines', name='EKF Filtered State', line=dict(color='#0D9488', width=3)), row=1, col=1)
@@ -589,12 +597,10 @@ with tab_fitting:
 with tab_report:
     st.markdown("#### 📄 Executive Batch Verification Audit Report")
     
-    # Capture live dynamic state values
     current_time_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     user_name = st.session_state.get('username', 'Operator')
     facility_name = st.session_state.get('org', 'Default Facility')
     
-    # Calculate live process metrics
     final_time = sim_df['Time (hr)'].iloc[-1]
     peak_x = sim_df['Biomass X (g/L)'].max()
     final_s = sim_df['Substrate S (g/L)'].iloc[-1]
@@ -604,7 +610,7 @@ with tab_report:
     <div style="background:#FFFFFF; color:#1E293B; padding:28px; border:1px solid #E2E8F0; border-radius:12px; font-family:'Segoe UI', Roboto, Helvetica, sans-serif; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
         <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #0284C7; padding-bottom:12px; margin-bottom:20px;">
             <div>
-                <h2 style="color:#0284C7; margin:0; font-size:22px; font-weight:700;">BioTwin Enterprise Audit Certificate</h2>
+                <h2 style="color:#0284C7; margin:0; font-size:22px; font-weight:700;">FermentIQ Enterprise Audit Certificate</h2>
                 <span style="font-size:12px; color:#64748B;">Automated Digital Twin Batch Run Record</span>
             </div>
             <div style="text-align:right;">
@@ -633,55 +639,23 @@ with tab_report:
                 <td style="padding:6px;"><b>Feeding Strategy:</b> {feed_policy}</td>
                 <td style="padding:6px;"><b>Base Feed Rate (F₀):</b> {F0} L/h</td>
             </tr>
-            <tr style="background:#F8FAFC;">
-                <td style="padding:6px;"><b>Feed Substrate Conc (S_feed):</b> {S_feed} g/L</td>
-                <td style="padding:6px;"><b>Volumetric Oxygen Transfer (k_L a):</b> {kla} h⁻¹</td>
-            </tr>
         </table>
 
-        <h3 style="font-size:14px; color:#0D9488; border-bottom:1px solid #CBD5E1; padding-bottom:4px; margin-top:16px;">2. Active Kinetic Model Parameters</h3>
-        <table style="width:100%; font-size:12px; border-collapse:collapse; margin-bottom:16px;">
-            <tr style="background:#F8FAFC;">
-                <td style="padding:6px;"><b>Max Growth Rate (μ_max):</b> {mu_max:.4f} h⁻¹</td>
-                <td style="padding:6px;"><b>Substrate Affinity (K_s):</b> {Ks:.3f} g/L</td>
-            </tr>
-            <tr>
-                <td style="padding:6px;"><b>Haldane Inhibition (K_i):</b> {Ki:.1f} g/L</td>
-                <td style="padding:6px;"><b>Biomass Yield (Y_x/s):</b> {Y_xs:.3f} g/g</td>
-            </tr>
-        </table>
-
-        <h3 style="font-size:14px; color:#0D9488; border-bottom:1px solid #CBD5E1; padding-bottom:4px; margin-top:16px;">3. Simulated Performance Metrics & Yields</h3>
+        <h3 style="font-size:14px; color:#0D9488; border-bottom:1px solid #CBD5E1; padding-bottom:4px; margin-top:16px;">2. Simulated Performance Metrics & Yields</h3>
         <table style="width:100%; font-size:12px; border-collapse:collapse; margin-bottom:16px;">
             <tr style="background:#F8FAFC;">
                 <td style="padding:6px;"><b>Batch Duration:</b> {final_time:.1f} Hours</td>
                 <td style="padding:6px;"><b>Final Working Volume:</b> {final_V:.2f} L</td>
             </tr>
             <tr>
-                <td style="padding:6px;"><b>Peak Biomass (X_max):</b> {peak_x:.2f} g/L</td>
-                <td style="padding:6px;"><b>Residual Substrate (S_final):</b> {final_s:.2f} g/L</td>
-            </tr>
-            <tr style="background:#F8FAFC;">
                 <td style="padding:6px;"><b>Target Product Titer (P):</b> <b style="color:#0284C7;">{final_P:.2f} g/L</b></td>
-                <td style="padding:6px;"><b>Product / Biomass Yield (Y_p/x):</b> {overall_yield_px:.3f} g/g</td>
-            </tr>
-            <tr>
-                <td style="padding:6px;"><b>Toxic Byproduct (A):</b> <b style="color:{'#E11D48' if final_A >= A_crit*0.8 else '#0D9488'};">{final_A:.2f} g/L</b> (Crit: {A_crit} g/L)</td>
                 <td style="padding:6px;"><b>Volumetric Productivity:</b> <b>{vol_prod:.3f} g/h</b></td>
             </tr>
         </table>
 
         <div style="font-size:10px; color:#94A3B8; margin-top:20px; text-align:center; border-top:1px solid #E2E8F0; padding-top:8px;">
-            Generated by BioTwin Pro v4.0 Engine • Confidential Bioprocess Audit Report
+            Generated by FermentIQ v4.0 Engine • Confidential Bioprocess Audit Report
         </div>
     </div>
     """
-    
-    st.components.v1.html(report_html, height=520, scrolling=True)
-    st.download_button(
-        "📥 Download Verified Audit Certificate (HTML)",
-        report_html,
-        f"BioTwin_Batch_Report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
-        "text/html",
-        use_container_width=True
-    )
+    st.markdown(report_html, unsafe_allow_html=True)
