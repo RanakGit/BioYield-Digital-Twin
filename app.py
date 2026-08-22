@@ -151,6 +151,49 @@ st.markdown("""
         background-color: #F8FAFC;
         border-right: 1px solid #E2E8F0;
     }
+
+    /* --- DARK MODE ADAPTIVE STYLING --- */
+    @media (prefers-color-scheme: dark) {
+        .brand-header {
+            background: #1E293B !important;
+            border-color: #334155 !important;
+            color: #F8FAFC !important;
+        }
+        .brand-title {
+            color: #F8FAFC !important;
+        }
+        .kpi-card {
+            background-color: #1E293B !important;
+            border-color: #334155 !important;
+            color: #F8FAFC !important;
+        }
+        .kpi-value {
+            color: #F8FAFC !important;
+        }
+        .kpi-label {
+            color: #94A3B8 !important;
+        }
+        .section-banner {
+            background: #1E293B !important;
+            border-color: #334155 !important;
+            color: #F8FAFC !important;
+        }
+        .section-banner h4 {
+            color: #F8FAFC !important;
+        }
+        .section-banner p {
+            color: #94A3B8 !important;
+        }
+        section[data-testid="stSidebar"] {
+            background-color: #0B0F19 !important;
+            border-right-color: #334155 !important;
+        }
+        .stButton>button {
+            background-color: #1E293B !important;
+            color: #F8FAFC !important;
+            border-color: #334155 !important;
+        }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -170,7 +213,6 @@ def init_user_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    # Seed permanent demo account
     cursor.execute("SELECT id FROM users WHERE username = ?", ("demo",))
     if not cursor.fetchone():
         salt = secrets.token_bytes(16).hex()
@@ -233,8 +275,10 @@ if not st.session_state['authenticated']:
         
         with auth_tab1:
             with st.form("login_form"):
-                login_user = st.text_input("Username or Email", value="demo")
-                login_pass = st.text_input("Password", type="password", value="demo123")
+                # Clean login inputs without hardcoded credentials pre-displayed
+                login_user = st.text_input("Username or Email", value="")
+                login_pass = st.text_input("Password", type="password", value="")
+                st.caption("💡 Tip: Use username `demo` and password `demo123` or click **Continue as Guest** below.")
                 st.markdown("<br>", unsafe_allow_html=True)
                 c_login, c_guest = st.columns(2)
                 with c_login:
@@ -332,12 +376,10 @@ def fermentiq_v4_model(y, t, mu_max, Ks, Ki, Y_xs, Y_ps, alpha, beta, kla, C_sta
     D = F_in / V
     
     dXdt = (mu_eff - D) * X
-    # Closed Mass Balance: Consumption by biomass growth, product formation, and maintenance/byproduct
     dSdt = D * (S_feed - S) - ((1.0 / Y_xs) * mu_eff * X) - ((1.0 / Y_ps) * mu_eff * X) if S > 0 else D * (S_feed - S)
     dPdt = -D * P + (Y_ps * mu_eff * X) + (alpha * mu_eff * X) + (beta * X)
     dAdt = -D * A + (alpha_A * mu_eff * X) + (beta_A * X)
     
-    # Growth-dependent Oxygen Uptake Rate (OUR)
     OUR = (q_O2 * (mu_eff / mu_max) + 0.05) * X * 1000.0 if mu_max > 0 else 0.05 * X * 1000.0
     OTR = kla * (C_star - DO)
     dDOdt = OTR - OUR - (D * DO)
@@ -520,7 +562,7 @@ final_P = sim_df['Product P (g/L)'].iloc[-1]
 final_A = sim_df['Byproduct A (g/L)'].iloc[-1]
 final_V = sim_df['Reactor Volume V (L)'].iloc[-1]
 min_DO = sim_df['Dissolved Oxygen DO (mg/L)'].min()
-vol_prod = (final_P * final_V) / batch_time if batch_time > 0 else 0  # Corrected units: g/L·h (or total productivity g/h)
+vol_prod = (final_P * final_V) / batch_time if batch_time > 0 else 0
 
 # ==========================================
 # 6. HEADER & KPI DASHBOARD
@@ -670,7 +712,6 @@ with tab_fitting:
             t_data = exp_df['Time'].astype(float).values
             x_data = exp_df['Biomass'].astype(float).values
             
-            # Log-linear exponential phase detection (sliding window regression on ln(X))
             best_mu = 0.1
             best_ci = 0.05
             valid_idx = x_data > 0
