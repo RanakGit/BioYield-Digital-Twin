@@ -194,6 +194,12 @@ def init_user_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    # Migration helper: ensure facility column exists if an older DB version is cached
+    cursor.execute("PRAGMA table_info(users)")
+    columns = [col[1] for col in cursor.fetchall()]
+    if "facility" not in columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN facility TEXT DEFAULT 'Default Facility'")
+
     cursor.execute("SELECT id FROM users WHERE username = ?", ("demo",))
     if not cursor.fetchone():
         salt = secrets.token_bytes(16).hex()
@@ -608,7 +614,6 @@ with tab_twin:
             margin=dict(l=20, r=20, t=30, b=20)
         )
         
-        # Gridlines disabled for a clean, modern look
         grid_style = dict(showgrid=False)
         fig.update_xaxes(title_text="<b>Batch Time (Hours)</b>", **grid_style)
         fig.update_yaxes(title_text="<b>Biomass, Substrate & Byproduct (g/L)</b>", secondary_y=False, **grid_style)
