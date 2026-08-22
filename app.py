@@ -260,37 +260,55 @@ tab_twin, tab_fitting, tab_sensitivity, tab_report = st.tabs([
 
 
 # ------------------------------------------
-# TAB 1: DYNAMIC SIMULATION
+# TAB 1: DYNAMIC SIMULATION (THEME-OPTIMIZED)
 # ------------------------------------------
 with tab_twin:
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     
+    # Biomass (X) - High Contrast Emerald Green
     fig.add_trace(go.Scatter(
         x=sim_df['Time (hr)'], y=sim_df['Biomass X (g/L)'],
-        name="Biomass (X)", line=dict(color="#10B981", width=3)
+        name="Biomass (X)",
+        line=dict(color="#059669", width=3.5)
     ), secondary_y=False)
     
+    # Substrate (S) - Vibrant Crimson/Rose Dashed
     fig.add_trace(go.Scatter(
         x=sim_df['Time (hr)'], y=sim_df['Substrate S (g/L)'],
-        name="Substrate (S)", line=dict(color="#F43F5E", width=2, dash='dash')
+        name="Substrate (S)",
+        line=dict(color="#E11D48", width=2.5, dash='dash')
     ), secondary_y=False)
     
+    # Product (P) - Deep Cyan/Blue
     fig.add_trace(go.Scatter(
         x=sim_df['Time (hr)'], y=sim_df['Product P (g/L)'],
-        name="Product (P)", line=dict(color="#06B6D4", width=3)
+        name="Product (P)",
+        line=dict(color="#0284C7", width=3.5)
     ), secondary_y=True)
 
     fig.update_layout(
-        template="plotly_dark",
+        template="plotly_white",  # Clean, professional white/neutral base
         paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(15,23,42,0.6)',
-        height=480,
-        margin=dict(l=20, r=20, t=30, b=20),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        plot_bgcolor='rgba(0,0,0,0)',
+        height=500,
+        margin=dict(l=20, r=20, t=40, b=20),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            font=dict(size=12, color="gray")
+        ),
+        hovermode="x unified"
     )
-    fig.update_xaxes(title_text="Batch Duration (Hours)", gridcolor="#334155")
-    fig.update_yaxes(title_text="Biomass & Substrate (g/L)", gridcolor="#334155", secondary_y=False)
-    fig.update_yaxes(title_text="Product Concentration (g/L)", gridcolor="#334155", secondary_y=True)
+
+    # Gridlines and Axes with high-contrast subtle borders
+    grid_style = dict(showgrid=True, gridcolor="rgba(150, 150, 150, 0.15)", zeroline=False)
+    
+    fig.update_xaxes(title_text="<b>Batch Duration (Hours)</b>", **grid_style)
+    fig.update_yaxes(title_text="<b>Biomass & Substrate (g/L)</b>", secondary_y=False, **grid_style)
+    fig.update_yaxes(title_text="<b>Product Concentration (g/L)</b>", secondary_y=True, **grid_style)
 
     st.plotly_chart(fig, use_container_width=True)
 
@@ -355,7 +373,7 @@ with tab_fitting:
 
 
 # ------------------------------------------
-# TAB 3: SENSITIVITY SWEEP
+# TAB 3: SENSITIVITY SWEEP (THEME-OPTIMIZED)
 # ------------------------------------------
 with tab_sensitivity:
     st.markdown("### 🎯 Parameter Sensitivity Heatmap")
@@ -372,14 +390,21 @@ with tab_sensitivity:
             matrix[i, j] = res['Product P (g/L)'].iloc[-1] if not res.empty else 0
             
     fig_sens = go.Figure(data=go.Heatmap(
-        z=matrix, x=np.round(mu_range, 2), y=np.round(S0_range, 1),
-        colorscale='Viridis', colorbar=dict(title="Final Product (g/L)")
+        z=matrix, 
+        x=np.round(mu_range, 2), 
+        y=np.round(S0_range, 1),
+        colorscale='Plasma',  # High contrast in light mode
+        colorbar=dict(title="<b>Final Product (g/L)</b>")
     ))
+
     fig_sens.update_layout(
         title="Product Yield Response Surface",
-        xaxis_title="μ_max (1/hr)",
-        yaxis_title="Initial Substrate S₀ (g/L)",
-        template="plotly_dark", height=450
+        xaxis_title="<b>μ_max (1/hr)</b>",
+        yaxis_title="<b>Initial Substrate S₀ (g/L)</b>",
+        template="plotly_white",
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        height=450
     )
     st.plotly_chart(fig_sens, use_container_width=True)
 
