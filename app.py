@@ -275,7 +275,6 @@ if not st.session_state['authenticated']:
         
         with auth_tab1:
             with st.form("login_form"):
-                # Clean login inputs without hardcoded credentials pre-displayed
                 login_user = st.text_input("Username or Email", value="")
                 login_pass = st.text_input("Password", type="password", value="")
                 st.caption("💡 Tip: Use username `demo` and password `demo123` or click **Continue as Guest** below.")
@@ -627,7 +626,9 @@ with tab_twin:
             legend=dict(orientation="h", y=1.08, x=1, xanchor="right", font=dict(size=11)),
             margin=dict(l=20, r=20, t=30, b=20)
         )
-        grid_style = dict(showgrid=True, gridcolor="#F1F5F9")
+        
+        # Gridlines disabled for a clean, modern look
+        grid_style = dict(showgrid=False)
         fig.update_xaxes(title_text="<b>Batch Time (Hours)</b>", **grid_style)
         fig.update_yaxes(title_text="<b>Biomass, Substrate & Byproduct (g/L)</b>", secondary_y=False, **grid_style)
         fig.update_yaxes(title_text="<b>Product (g/L) / DO (mg/L)</b>", secondary_y=True, **grid_style)
@@ -677,6 +678,8 @@ with tab_ekf:
     fig_ekf.add_trace(go.Scatter(x=t_sensor, y=est_s, mode='lines', name='EKF Reconstructed S(t)', line=dict(color='#0284C7', width=3)), row=1, col=2)
     
     fig_ekf.update_layout(template="simple_white", height=400, margin=dict(l=20, r=20, t=30, b=20))
+    fig_ekf.update_xaxes(showgrid=False)
+    fig_ekf.update_yaxes(showgrid=False)
     st.plotly_chart(fig_ekf, use_container_width=True)
 
 # --- TAB 3: PARAMETER FITTING ---
@@ -739,6 +742,8 @@ with tab_fitting:
             fit_curve = x_data[0] * np.exp(best_mu * t_smooth)
             fig_fit.add_trace(go.Scatter(x=t_smooth, y=fit_curve, mode='lines', name='Exponential Fit', line=dict(color='#0D9488', dash='dash')))
             fig_fit.update_layout(template="simple_white", height=300, margin=dict(l=20, r=20, t=30, b=20))
+            fig_fit.update_xaxes(showgrid=False)
+            fig_fit.update_yaxes(showgrid=False)
             st.plotly_chart(fig_fit, use_container_width=True)
         except Exception as e: st.error(f"Regression error: {e}")
 
