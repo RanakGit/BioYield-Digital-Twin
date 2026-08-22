@@ -27,9 +27,28 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
-    html, body, [class*="css"] {
+    :root {
+        --bg-main: #FFFFFF;
+        --card-bg: #FFFFFF;
+        --text-main: #0F172A;
+        --text-muted: #64748B;
+        --border-color: #E2E8F0;
+        --sidebar-bg: #F8FAFC;
+    }
+
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --bg-main: #0B0F19;
+            --card-bg: #1E293B;
+            --text-main: #F8FAFC;
+            --text-muted: #94A3B8;
+            --border-color: #334155;
+            --sidebar-bg: #0F172A;
+        }
+    }
+
+    html, body {
         font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-        color: #0F172A;
     }
 
     .block-container {
@@ -43,8 +62,8 @@ st.markdown("""
         align-items: center;
         justify-content: space-between;
         padding: 1.25rem 1.75rem;
-        background: #FFFFFF;
-        border: 1px solid #E2E8F0;
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
         border-radius: 14px;
         margin-bottom: 1.75rem;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
@@ -53,11 +72,16 @@ st.markdown("""
     .brand-title {
         font-size: 1.5rem;
         font-weight: 700;
-        color: #0F172A;
+        color: var(--text-main);
         display: flex;
         align-items: center;
         gap: 0.75rem;
         letter-spacing: -0.02em;
+    }
+
+    .brand-subtitle {
+        font-size: 0.85rem;
+        color: var(--text-muted);
     }
 
     .brand-badge {
@@ -79,8 +103,8 @@ st.markdown("""
 
     .kpi-card {
         flex: 1;
-        background-color: #FFFFFF;
-        border: 1px solid #E2E8F0;
+        background-color: var(--card-bg);
+        border: 1px solid var(--border-color);
         border-left: 4px solid #0284C7;
         border-radius: 12px;
         padding: 1.25rem 1.5rem;
@@ -98,7 +122,7 @@ st.markdown("""
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.05em;
-        color: #64748B;
+        color: var(--text-muted);
         margin-bottom: 0.5rem;
     }
 
@@ -106,13 +130,13 @@ st.markdown("""
         font-size: 1.75rem;
         font-weight: 700;
         font-family: 'JetBrains Mono', monospace;
-        color: #0F172A;
+        color: var(--text-main);
         letter-spacing: -0.03em;
     }
 
     .section-banner {
-        background: #F8FAFC;
-        border: 1px solid #E2E8F0;
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
         border-left: 4px solid #0D9488;
         padding: 1rem 1.25rem;
         border-radius: 0 10px 10px 0;
@@ -122,22 +146,22 @@ st.markdown("""
     .section-banner h4 {
         margin: 0 0 0.25rem 0;
         font-size: 1.05rem;
-        color: #0F172A;
+        color: var(--text-main);
         font-weight: 700;
     }
 
     .section-banner p {
         margin: 0;
         font-size: 0.85rem;
-        color: #64748B;
+        color: var(--text-muted);
     }
 
     .stButton>button {
         border-radius: 8px;
         font-weight: 600;
-        border: 1px solid #CBD5E1;
-        background-color: #FFFFFF;
-        color: #0F172A;
+        border: 1px solid var(--border-color);
+        background-color: var(--card-bg);
+        color: var(--text-main);
         transition: all 0.2s ease;
     }
     
@@ -148,51 +172,8 @@ st.markdown("""
     }
 
     section[data-testid="stSidebar"] {
-        background-color: #F8FAFC;
-        border-right: 1px solid #E2E8F0;
-    }
-
-    /* --- DARK MODE ADAPTIVE STYLING --- */
-    @media (prefers-color-scheme: dark) {
-        .brand-header {
-            background: #1E293B !important;
-            border-color: #334155 !important;
-            color: #F8FAFC !important;
-        }
-        .brand-title {
-            color: #F8FAFC !important;
-        }
-        .kpi-card {
-            background-color: #1E293B !important;
-            border-color: #334155 !important;
-            color: #F8FAFC !important;
-        }
-        .kpi-value {
-            color: #F8FAFC !important;
-        }
-        .kpi-label {
-            color: #94A3B8 !important;
-        }
-        .section-banner {
-            background: #1E293B !important;
-            border-color: #334155 !important;
-            color: #F8FAFC !important;
-        }
-        .section-banner h4 {
-            color: #F8FAFC !important;
-        }
-        .section-banner p {
-            color: #94A3B8 !important;
-        }
-        section[data-testid="stSidebar"] {
-            background-color: #0B0F19 !important;
-            border-right-color: #334155 !important;
-        }
-        .stButton>button {
-            background-color: #1E293B !important;
-            color: #F8FAFC !important;
-            border-color: #334155 !important;
-        }
+        background-color: var(--sidebar-bg);
+        border-right: 1px solid var(--border-color);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -269,7 +250,7 @@ if not st.session_state['authenticated']:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown("<div style='text-align: center;'><h2>🧬 FermentIQ Enterprise</h2><p style='color: #64748B;'>Advanced Bioprocess Digital Twin & Telemetry Suite</p></div>", unsafe_allow_html=True)
+        st.markdown("<div style='text-align: center;'><h2>🧬 FermentIQ Enterprise</h2><p style='color: var(--text-muted);'>Advanced Bioprocess Digital Twin & Telemetry Suite</p></div>", unsafe_allow_html=True)
         
         auth_tab1, auth_tab2 = st.tabs(["🔒 Secure Log In", "📝 Create Account"])
         
@@ -572,8 +553,8 @@ st.markdown(f"""
         <span>🧬 FermentIQ</span>
         <span class="brand-badge">Enterprise v4.1</span>
     </div>
-    <div style="font-size: 0.85rem; color: #64748B;">
-        Operator: <b style="color: #0F172A;">{st.session_state.get('username', 'Operator')}</b> | Strain: <b style="color: #0F172A;">{preset_choice}</b> | Mode: <b style="color: #0F172A;">{feed_policy}</b>
+    <div class="brand-subtitle">
+        Operator: <b style="color: var(--text-main);">{st.session_state.get('username', 'Operator')}</b> | Strain: <b style="color: var(--text-main);">{preset_choice}</b> | Mode: <b style="color: var(--text-main);">{feed_policy}</b>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -582,19 +563,19 @@ st.markdown(f"""
 <div class="kpi-container">
     <div class="kpi-card" style="border-left-color: #0D9488;">
         <div class="kpi-label">Final Biomass (X)</div>
-        <div class="kpi-value">{final_X:.2f} <span style="font-size:0.85rem; color:#64748B;">g/L</span></div>
+        <div class="kpi-value">{final_X:.2f} <span style="font-size:0.85rem; color:var(--text-muted);">g/L</span></div>
     </div>
     <div class="kpi-card" style="border-left-color: #0284C7;">
         <div class="kpi-label">Target Product (P)</div>
-        <div class="kpi-value" style="color: #0284C7;">{final_P:.2f} <span style="font-size:0.85rem; color:#64748B;">g/L</span></div>
+        <div class="kpi-value" style="color: #0284C7;">{final_P:.2f} <span style="font-size:0.85rem; color:var(--text-muted);">g/L</span></div>
     </div>
     <div class="kpi-card" style="border-left-color: #E11D48;">
         <div class="kpi-label">Byproduct (A)</div>
-        <div class="kpi-value" style="color: {'#E11D48' if final_A > A_crit*0.7 else '#0F172A'};">{final_A:.2f} <span style="font-size:0.85rem; color:#64748B;">g/L</span></div>
+        <div class="kpi-value" style="color: {'#E11D48' if final_A > A_crit*0.7 else 'var(--text-main)'};">{final_A:.2f} <span style="font-size:0.85rem; color:var(--text-muted);">g/L</span></div>
     </div>
     <div class="kpi-card" style="border-left-color: #8B5CF6;">
         <div class="kpi-label">Vol. Productivity</div>
-        <div class="kpi-value">{vol_prod:.3f} <span style="font-size:0.85rem; color:#64748B;">g/L·h</span></div>
+        <div class="kpi-value">{vol_prod:.3f} <span style="font-size:0.85rem; color:var(--text-muted);">g/L·h</span></div>
     </div>
 </div>
 """, unsafe_allow_html=True)
