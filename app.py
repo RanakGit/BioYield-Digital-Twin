@@ -1,448 +1,451 @@
-import os
-import time
-import urllib.parse
+import streamlit as st
 import numpy as np
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from scipy.integrate import odeint
-import streamlit as st
-from supabase import create_client, Client
+from scipy.optimize import curve_fit
+import datetime
+import html
 
 # ==========================================
-# 1. PAGE CONFIGURATION & INITIAL STATE
+# 1. PAGE & STYLING CONFIGURATION
 # ==========================================
 st.set_page_config(
-    page_title="BioYield Digital Twin",
+    page_title="BioTwin Pro | Enterprise Bioprocess Digital Twin",
     page_icon="🧬",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded"
 )
 
-# Initialize Session States safely
-if "run_history" not in st.session_state:
-    st.session_state["run_history"] = []
-if "baseline_yield" not in st.session_state:
-    st.session_state["baseline_yield"] = None
-if "user" not in st.session_state:
-    st.session_state["user"] = None
-
-# ==========================================
-# 2. SUPABASE AUTH & DB INITIALIZATION
-# ==========================================
-@st.cache_resource
-def init_supabase() -> Client | None:
-    """Initialize Supabase client securely from secrets."""
-    try:
-        url = st.secrets["SUPABASE_URL"]
-        key = st.secrets["SUPABASE_KEY"]  # Ensure this is the ANON public key
-        return create_client(url, key)
-    except Exception as e:
-        st.error(f"Supabase configuration missing or invalid: {str(e)}")
-        return None
-
-supabase: Client | None = init_supabase()
-
-def get_current_base_url() -> str:
-    """Dynamically determine current app URL for OAuth redirects."""
-    try:
-        if "REDIRECT_URL" in st.secrets:
-            return st.secrets["REDIRECT_URL"].rstrip("/")
-    except Exception:
-        pass
-    
-    # Fallback default for Streamlit Cloud / local testing
-    return "http://localhost:8501"
-
-def handle_oauth_callback():
-    """Extract and set user session token on OAuth redirect."""
-    if not supabase:
-        return
-    query_params = st.query_params
-    if "access_token" in query_params:
-        access_token = query_params["access_token"]
-        try:
-            user_response = supabase.auth.get_user(access_token)
-            if user_response and user_response.user:
-                st.session_state["user"] = user_response.user
-        except Exception as e:
-            st.sidebar.error(f"Authentication failed: {str(e)}")
-
-handle_oauth_callback()
-
-# ==========================================
-# 3. SUPABASE DB PERSISTENCE HELPERS
-# ==========================================
-def save_run_to_supabase(run_data: dict):
-    """Persist simulation run to Supabase DB if user is authenticated."""
-    if not supabase or not st.session_state.get("user"):
-        return
-    
-    try:
-        payload = {
-            "user_id": st.session_state["user"].id,
-            "run_name": run_data["run_name"],
-            "batch_time_hr": float(run_data["batch_time_hr"]),
-            "final_biomass": float(run_data["final_biomass"]),
-            "final_product": float(run_data["final_product"]),
-            "yield_p_s": float(run_data["yield_p_s"]),
-            "volumetric_prod": float(run_data["volumetric_prod"]),
-            "timestamp": run_data["timestamp"]
-        }
-        supabase.table("simulation_runs").insert(payload).execute()
-    except Exception as e:
-        # Gracefully handle DB logging failure without breaking UI
-        st.sidebar.warning(f"Note: Could not sync run to database ({str(e)})")
-
-def fetch_user_run_history():
-    """Load historical runs from Supabase into session state."""
-    if not supabase or not st.session_state.get("user"):
-        return
-    try:
-        response = (
-            supabase.table("simulation_runs")
-            .select("*")
-            .eq("user_id", st.session_state["user"].id)
-            .order("created_at", desc=True)
-            .execute()
-        )
-        if response.data:
-            st.session_state["run_history"] = [
-                {
-                    "run_name": r["run_name"],
-                    "batch_time_hr": r["batch_time_hr"],
-                    "final_biomass": r["final_biomass"],
-                    "final_product": r["final_product"],
-                    "yield_p_s": r["yield_p_s"],
-                    "volumetric_prod": r["volumetric_prod"],
-                    "timestamp": r["timestamp"]
-                }
-                for r in response.data
-            ]
-    except Exception:
-        pass  # Fall back to session state in memory
-
-# ==========================================
-# 4. KINETIC MODEL & HEAVY CACHED CALCULATIONS
-# ==========================================
-def bioprocess_ode_system(state, t, mu_max, Ks, Y_xs, Y_ps, alpha, beta):
-    """
-    Monod-based Kinetic Differential Equations:
-    dX/dt = mu * X
-    dS/dt = - (1/Y_xs) * mu * X - (1/Y_ps) * qp * X
-    dP/dt = qp * X  where qp = alpha * mu + beta
-    """
-    X, S, P = state
-    # Guard against negative concentration values in ODE solver
-    S_pos = max(0.0, S)
-    X_pos = max(0.0, X)
-    
-    mu = mu_max * (S_pos / (Ks + S_pos))
-    qp = alpha * mu + beta
-
-    dXdt = mu * X_pos
-    dSdt = - (1.0 / Y_xs) * mu * X_pos - (1.0 / Y_ps) * qp * X_pos
-    dPdt = qp * X_pos
-
-    return [dXdt, dSdt, dPdt]
-
-@st.cache_data(show_spinner=False)
-def run_bioprocess_simulation(
-    X0: float,
-    S0: float,
-    P0: float,
-    t_max: float,
-    steps: int,
-    mu_max: float,
-    Ks: float,
-    Y_xs: float,
-    Y_ps: float,
-    alpha: float,
-    beta: float,
-) -> tuple[pd.DataFrame, dict]:
-    """Execute ODE integration with memoization and robust error catching."""
-    t = np.linspace(0, t_max, steps)
-    initial_state = [X0, S0, P0]
-
-    try:
-        solution = odeint(
-            bioprocess_ode_system,
-            initial_state,
-            t,
-            args=(mu_max, Ks, Y_xs, Y_ps, alpha, beta),
-            mxstep=5000
-        )
-    except Exception as e:
-        raise RuntimeError(f"ODE integration non-convergence: {str(e)}")
-
-    df = pd.DataFrame(solution, columns=["Biomass (X)", "Substrate (S)", "Product (P)"])
-    df["Time (hr)"] = t
-
-    # Compute key KPIs safely
-    final_p = max(0.0, float(df["Product (P)"].iloc[-1]))
-    final_x = max(0.0, float(df["Biomass (X)"].iloc[-1]))
-    consumed_s = max(1e-6, S0 - float(df["Substrate (S)"].iloc[-1]))
-
-    yield_p_s = final_p / consumed_s
-    volumetric_prod = final_p / t_max if t_max > 0 else 0.0
-
-    kpis = {
-        "final_biomass": final_x,
-        "final_product": final_p,
-        "consumed_substrate": consumed_s,
-        "yield_p_s": yield_p_s,
-        "volumetric_prod": volumetric_prod,
-        "batch_time_hr": t_max
+# Custom High-End SaaS UI Injection
+st.markdown("""
+<style>
+    /* CSS Variables & Palette */
+    :root {
+        --bg-main: #0F172A;
+        --card-bg: #1E293B;
+        --accent-emerald: #10B981;
+        --accent-cyan: #06B6D4;
+        --accent-rose: #F43F5E;
+        --text-primary: #F8FAFC;
+        --text-muted: #94A3B8;
+        --border-color: #334155;
     }
 
-    return df, kpis
+    /* Main Container Adjustments */
+    .stApp {
+        background-color: var(--bg-main);
+        color: var(--text-primary);
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
 
-@st.cache_data(show_spinner="Computing 2D Parameter Sensitivity Matrix...")
-def run_productivity_heatmap_sweep(
-    S0: float,
-    X0: float,
-    P0: float,
-    t_max: float,
-    steps: int,
-    mu_max_range: tuple[float, float],
-    S0_range: tuple[float, float],
-    Ks: float,
-    Y_xs: float,
-    Y_ps: float,
-    alpha: float,
-    beta: float,
-    grid_size: int = 15
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Cached computation of 15x15 parameter space sweep.
-    Prevents thread locking and freezing on slider updates.
-    """
-    mu_vals = np.linspace(mu_max_range[0], mu_max_range[1], grid_size)
-    s0_vals = np.linspace(S0_range[0], S0_range[1], grid_size)
-    prod_matrix = np.zeros((grid_size, grid_size))
+    /* Custom Glassmorphism Metric Cards */
+    .metric-card {
+        background: rgba(30, 41, 59, 0.7);
+        backdrop-filter: blur(8px);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 18px 22px;
+        margin-bottom: 12px;
+        transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+    .metric-card:hover {
+        transform: translateY(-2px);
+        border-color: var(--accent-cyan);
+    }
+    .metric-label {
+        font-size: 0.82rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+        margin-bottom: 4px;
+    }
+    .metric-value {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+    .metric-sub {
+        font-size: 0.75rem;
+        color: var(--accent-emerald);
+        font-weight: 500;
+    }
 
-    for i, s0_val in enumerate(s0_vals):
-        for j, mu_val in enumerate(mu_vals):
-            try:
-                _, kpis = run_bioprocess_simulation(
-                    X0=X0, S0=s0_val, P0=P0, t_max=t_max, steps=steps,
-                    mu_max=mu_val, Ks=Ks, Y_xs=Y_xs, Y_ps=Y_ps,
-                    alpha=alpha, beta=beta
-                )
-                prod_matrix[i, j] = kpis["volumetric_prod"]
-            except Exception:
-                prod_matrix[i, j] = 0.0
+    /* Sidebar Styling */
+    section[data-testid="stSidebar"] {
+        background-color: #0B1120;
+        border-right: 1px solid var(--border-color);
+    }
 
-    return prod_matrix, mu_vals, s0_vals
+    /* Tab Header Customization */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 48px;
+        border-radius: 8px 8px 0 0;
+        padding: 0 20px;
+        font-weight: 600;
+        color: var(--text-muted);
+        background-color: transparent;
+    }
+    .stTabs [aria-selected="true"] {
+        color: var(--accent-cyan) !important;
+        border-bottom: 3px solid var(--accent-cyan) !important;
+        background: rgba(6, 182, 212, 0.05);
+    }
+
+    /* Print / PDF Mode Helper */
+    @media print {
+        section[data-testid="stSidebar"], .stButton, header {
+            display: none !important;
+        }
+        .stApp {
+            background-color: #FFFFFF !important;
+            color: #000000 !important;
+        }
+    }
+</style>
+""", unsafe_allow_html=True)
+
 
 # ==========================================
-# 5. SIDEBAR: AUTHENTICATION & CONTROLS
+# 2. NUMERICAL KINETIC MODEL ENGINE
 # ==========================================
-with st.sidebar:
-    st.title("🧬 Control Panel")
+def monod_model(y, t, mu_max, Ks, Y_xs, Y_ps, alpha, beta):
+    """
+    Generalized Monod-type fermentation ODE System.
+    y = [Biomass (X), Substrate (S), Product (P)]
+    """
+    X, S, P = max(0, y[0]), max(0, y[1]), max(0, y[2])
     
-    # --- Authentication Block ---
-    st.subheader("Account & Sync")
-    if st.session_state.get("user"):
-        user_email = st.session_state["user"].email
-        st.success(f"Logged in as:\n`{user_email}`")
-        if st.button("Log Out", use_container_width=True):
-            if supabase:
-                supabase.auth.sign_out()
-            st.session_state["user"] = None
-            st.session_state["run_history"] = []
-            st.rerun()
-    else:
-        st.info("Log in to sync runs across devices.")
-        if supabase:
-            base_url = get_current_base_url()
-            redirect_to = f"{base_url}"
-            try:
-                auth_url_resp = supabase.auth.get_user() # Validate
-            except Exception:
-                pass
-            
-            login_url = f"{st.secrets['SUPABASE_URL']}/auth/v1/authorize?provider=google&redirect_to={urllib.parse.quote(redirect_to)}"
-            st.markdown(
-                f'<a href="{login_url}" target="_self" style="display: block; text-align: center; background-color: #FF4B4B; color: white; padding: 8px 16px; border-radius: 8px; text-decoration: none; font-weight: bold;">Log in with Google</a>',
-                unsafe_allow_html=True
-            )
-        else:
-            st.caption("⚠️ Auth currently offline (Supabase keys required).")
-
-    st.divider()
-
-    # --- Simulation Parameters ---
-    st.subheader("Initial Conditions")
-    X0 = st.number_input("Initial Biomass X0 (g/L)", min_value=0.01, max_value=50.0, value=0.5, step=0.1)
-    S0 = st.number_input("Initial Substrate S0 (g/L)", min_value=1.0, max_value=500.0, value=50.0, step=5.0)
-    P0 = st.number_input("Initial Product P0 (g/L)", min_value=0.0, max_value=50.0, value=0.0, step=0.1)
-    t_max = st.slider("Batch Duration (hr)", min_value=5, max_value=120, value=48, step=1)
+    # Specific growth rate
+    mu = mu_max * S / (Ks + S) if S > 0 else 0.0
     
-    st.subheader("Kinetic Parameters")
-    mu_max = st.slider("Max Specific Growth Rate μ_max (1/hr)", 0.05, 1.5, 0.35, 0.01)
-    Ks = st.number_input("Monod Constant Ks (g/L)", 0.01, 10.0, 0.5, 0.05)
-    Y_xs = st.slider("Yield Biomass/Substrate Y_X/S (g/g)", 0.1, 0.9, 0.5, 0.05)
-    Y_ps = st.slider("Yield Product/Substrate Y_P/S (g/g)", 0.01, 0.9, 0.2, 0.02)
+    dXdt = mu * X
+    dSdt = -(1.0 / Y_xs) * dXdt if S > 0 else 0.0
+    dPdt = (Y_ps * dXdt) + (alpha * dXdt) + (beta * X)
     
-    with st.expander("Luedeking-Piret Parameters"):
-        alpha = st.number_input("Growth-associated α", 0.0, 5.0, 0.1, 0.05)
-        beta = st.number_input("Non-growth-associated β (1/hr)", 0.0, 1.0, 0.01, 0.005)
+    return [dXdt, dSdt, dPdt]
 
-# Load user historical runs on first auth
-if st.session_state.get("user") and not st.session_state["run_history"]:
-    fetch_user_run_history()
+@st.cache_data(ttl=3600)
+def run_simulation(X0, S0, P0, mu_max, Ks, Y_xs, Y_ps, alpha, beta, batch_time, n_points=250):
+    """Cached solver for speed across high-density slider adjustments."""
+    t = np.linspace(0, batch_time, n_points)
+    try:
+        sol = odeint(monod_model, [X0, S0, P0], t, args=(mu_max, Ks, Y_xs, Y_ps, alpha, beta))
+        df = pd.DataFrame({
+            'Time (hr)': t,
+            'Biomass X (g/L)': np.clip(sol[:, 0], 0, None),
+            'Substrate S (g/L)': np.clip(sol[:, 1], 0, None),
+            'Product P (g/L)': np.clip(sol[:, 2], 0, None)
+        })
+        return df, True
+    except Exception as e:
+        return pd.DataFrame(), False
 
-# Run main simulation safely
-try:
-    df_sim, current_kpis = run_bioprocess_simulation(
-        X0=X0, S0=S0, P0=P0, t_max=float(t_max), steps=200,
-        mu_max=mu_max, Ks=Ks, Y_xs=Y_xs, Y_ps=Y_ps, alpha=alpha, beta=beta
-    )
-except Exception as err:
-    st.error(f"Simulation Error: {str(err)}")
+
+# ==========================================
+# 3. PRESET ORGANISM PROFILES
+# ==========================================
+ORGANISM_PRESETS = {
+    "E. coli Recombinant Protein": {
+        "mu_max": 0.65, "Ks": 0.20, "Y_xs": 0.50, "Y_ps": 0.15,
+        "alpha": 0.10, "beta": 0.02, "X0": 0.1, "S0": 25.0, "batch_time": 18.0
+    },
+    "S. cerevisiae (Ethanol)": {
+        "mu_max": 0.40, "Ks": 0.50, "Y_xs": 0.12, "Y_ps": 0.45,
+        "alpha": 0.05, "beta": 0.01, "X0": 0.5, "S0": 100.0, "batch_time": 30.0
+    },
+    "CHO Cell Line (Monoclonal Ab)": {
+        "mu_max": 0.035, "Ks": 0.10, "Y_xs": 0.65, "Y_ps": 0.25,
+        "alpha": 0.20, "beta": 0.005, "X0": 0.2, "S0": 15.0, "batch_time": 120.0
+    },
+    "Custom / Manual Sandbox": {
+        "mu_max": 0.45, "Ks": 0.25, "Y_xs": 0.45, "Y_ps": 0.20,
+        "alpha": 0.05, "beta": 0.01, "X0": 0.1, "S0": 20.0, "batch_time": 24.0
+    }
+}
+
+
+# ==========================================
+# 4. SIDEBAR CONTROLS
+# ==========================================
+st.sidebar.markdown("## 🧬 BioTwin Pro")
+st.sidebar.caption("Enterprise Bioprocess Digital Twin v2.5")
+st.sidebar.markdown("---")
+
+preset_choice = st.sidebar.selectbox("⚡ Quick Strain Presets", list(ORGANISM_PRESETS.keys()))
+preset = ORGANISM_PRESETS[preset_choice]
+
+st.sidebar.markdown("### ⚙️ Kinetic Parameters")
+mu_max = st.sidebar.slider("μ_max (Max Growth Rate, 1/h)", 0.01, 1.50, float(preset["mu_max"]), 0.01)
+Ks = st.sidebar.slider("Ks (Affinity Constant, g/L)", 0.01, 2.00, float(preset["Ks"]), 0.01)
+Y_xs = st.sidebar.slider("Y_x/s (Yield Biomass/Substrate)", 0.05, 0.90, float(preset["Y_xs"]), 0.01)
+Y_ps = st.sidebar.slider("Y_p/s (Yield Product/Substrate)", 0.00, 0.90, float(preset["Y_ps"]), 0.01)
+
+st.sidebar.markdown("### 🧪 Operational Initial Values")
+X0 = st.sidebar.number_input("Initial Biomass X₀ (g/L)", 0.01, 50.0, float(preset["X0"]), 0.1)
+S0 = st.sidebar.number_input("Initial Substrate S₀ (g/L)", 0.1, 500.0, float(preset["S0"]), 1.0)
+batch_time = st.sidebar.slider("Batch Duration (hr)", 4.0, 200.0, float(preset["batch_time"]), 1.0)
+
+# Product Kinetics
+alpha = preset["alpha"]
+beta = preset["beta"]
+
+# ==========================================
+# 5. CORE COMPUTATION & KPI ENGINE
+# ==========================================
+sim_df, success = run_simulation(X0, S0, 0.0, mu_max, Ks, Y_xs, Y_ps, alpha, beta, batch_time)
+
+if not success or sim_df.empty:
+    st.error("⚠️ ODE Numerical Divergence. Please adjust parameter boundaries.")
     st.stop()
 
-# Auto-set initial baseline if empty
-if st.session_state["baseline_yield"] is None:
-    st.session_state["baseline_yield"] = current_kpis["yield_p_s"]
+# Key Performance Indicators
+final_X = sim_df['Biomass X (g/L)'].iloc[-1]
+final_P = sim_df['Product P (g/L)'].iloc[-1]
+consumed_S = S0 - sim_df['Substrate S (g/L)'].iloc[-1]
+vol_prod = final_P / batch_time if batch_time > 0 else 0
+overall_yield = (final_P / consumed_S) if consumed_S > 0 else 0
+
 
 # ==========================================
-# 6. MAIN APPLICATION LAYOUT & TABS
+# 6. MAIN DASHBOARD HEADER & METRICS
 # ==========================================
-st.title("🧪 Fermentation Digital Twin")
-st.caption("Real-time Monod & Luedeking-Piret Kinetics Simulator")
+st.title("🧫 Bioprocess Digital Twin Dashboard")
+st.caption(f"Active Profile: **{preset_choice}** | Solved via High-Precision ODE Integration")
 
-# --- Top Metric Dashboard ---
 col1, col2, col3, col4 = st.columns(4)
+with col1:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">Final Biomass (X)</div>
+        <div class="metric-value">{final_X:.2f} <span style="font-size:1rem;">g/L</span></div>
+        <div class="metric-sub">▲ {(final_X - X0):.2f} g/L net growth</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-delta_yield = None
-if st.session_state["baseline_yield"]:
-    delta_val = current_kpis["yield_p_s"] - st.session_state["baseline_yield"]
-    delta_yield = f"{delta_val:+.3f} g/g vs baseline"
+with col2:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">Final Product (P)</div>
+        <div class="metric-value" style="color: var(--accent-cyan);">{final_P:.2f} <span style="font-size:1rem;">g/L</span></div>
+        <div class="metric-sub">Target Expression</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-col1.metric("Final Biomass (X)", f"{current_kpis['final_biomass']:.2f} g/L")
-col2.metric("Final Product (P)", f"{current_kpis['final_product']:.2f} g/L")
-col3.metric("Yield (Y_P/S)", f"{current_kpis['yield_p_s']:.3f} g/g", delta=delta_yield)
-col4.metric("Volumetric Prod.", f"{current_kpis['volumetric_prod']:.3f} g/L/hr")
+with col3:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">Volumetric Productivity</div>
+        <div class="metric-value">{vol_prod:.3f} <span style="font-size:1rem;">g/L/h</span></div>
+        <div class="metric-sub">Space-Time Yield</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-st.divider()
+with col4:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">Overall Product Yield</div>
+        <div class="metric-value">{overall_yield:.3f} <span style="font-size:1rem;">g/g</span></div>
+        <div class="metric-sub">P / Substrate Consumed</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-# --- Tabs ---
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📈 Time-Series Dynamics", 
-    "📊 Yield & Baseline Benchmarking", 
-    "🔥 Parameter Sensitivity", 
-    "📁 Run History"
+st.markdown("<br>", unsafe_allow_html=True)
+
+
+# ==========================================
+# 7. TAB NAVIGATION WORKFLOW
+# ==========================================
+tab_twin, tab_fitting, tab_sensitivity, tab_report = st.tabs([
+    "📈 Dynamic Twin Simulation",
+    "🔬 Data Fitting Engine (CSV)",
+    "🎯 Sensitivity & Parameter Sweep",
+    "📄 Executive Report & Export"
 ])
 
-# --- TAB 1: TIME-SERIES DYNAMICS ---
-with tab1:
-    st.subheader("Fermentation Trajectory")
+
+# ------------------------------------------
+# TAB 1: DYNAMIC SIMULATION
+# ------------------------------------------
+with tab_twin:
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
     
-    fig_dynamics = px.line(
-        df_sim, 
-        x="Time (hr)", 
-        y=["Biomass (X)", "Substrate (S)", "Product (P)"],
-        labels={"value": "Concentration (g/L)", "variable": "Species"},
-        color_discrete_map={"Biomass (X)": "#2E7D32", "Substrate (S)": "#D84315", "Product (P)": "#1565C0"}
+    fig.add_trace(go.Scatter(
+        x=sim_df['Time (hr)'], y=sim_df['Biomass X (g/L)'],
+        name="Biomass (X)", line=dict(color="#10B981", width=3)
+    ), secondary_y=False)
+    
+    fig.add_trace(go.Scatter(
+        x=sim_df['Time (hr)'], y=sim_df['Substrate S (g/L)'],
+        name="Substrate (S)", line=dict(color="#F43F5E", width=2, dash='dash')
+    ), secondary_y=False)
+    
+    fig.add_trace(go.Scatter(
+        x=sim_df['Time (hr)'], y=sim_df['Product P (g/L)'],
+        name="Product (P)", line=dict(color="#06B6D4", width=3)
+    ), secondary_y=True)
+
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(15,23,42,0.6)',
+        height=480,
+        margin=dict(l=20, r=20, t=30, b=20),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
-    fig_dynamics.update_layout(hovermode="x unified", height=450)
-    st.plotly_chart(fig_dynamics, use_container_width=True)
+    fig.update_xaxes(title_text="Batch Duration (Hours)", gridcolor="#334155")
+    fig.update_yaxes(title_text="Biomass & Substrate (g/L)", gridcolor="#334155", secondary_y=False)
+    fig.update_yaxes(title_text="Product Concentration (g/L)", gridcolor="#334155", secondary_y=True)
 
-# --- TAB 2: YIELD & BENCHMARKING ---
-with tab2:
-    st.subheader("Yield Optimization & Benchmarking")
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# ------------------------------------------
+# TAB 2: DATA FITTING ENGINE (HIGH VALUE)
+# ------------------------------------------
+with tab_fitting:
+    st.markdown("### 🔬 Automated Monod Parameter Fitting")
+    st.caption("Upload experimental offline batch run data to extract empirical μ_max and Ks constants.")
     
-    col_b1, col_b2 = st.columns([1, 2])
+    uploaded_file = st.file_uploader("Upload Experimental Run CSV", type=["csv"])
     
-    with col_b1:
-        st.markdown("### Control Actions")
-        if st.button("Set Current Run as Baseline", use_container_width=True):
-            st.session_state["baseline_yield"] = current_kpis["yield_p_s"]
-            st.success("Baseline updated!")
-            st.rerun()
+    # Template CSV download helper
+    template_df = pd.DataFrame({
+        'Time': [0, 2, 4, 6, 8, 12, 16, 20],
+        'Biomass': [0.1, 0.25, 0.6, 1.4, 2.8, 5.1, 6.2, 6.4],
+        'Substrate': [20.0, 19.1, 17.5, 14.2, 9.8, 2.5, 0.4, 0.1]
+    })
+    st.download_button("📥 Download CSV Data Template", template_df.to_csv(index=False), "fermentation_data_template.csv", "text/csv")
+    
+    if uploaded_file is not None:
+        try:
+            exp_df = pd.read_csv(uploaded_file)
+            st.success("✅ CSV Successfully Loaded")
+            
+            col_t, col_x = st.columns(2)
+            with col_t:
+                st.dataframe(exp_df.head(6), use_container_width=True)
+            
+            # Simple Monod Growth Analytical Curve Fitting for Demonstration
+            def fit_monod_growth(t, mu_max_fit, X0_fit):
+                return X0_fit * np.exp(mu_max_fit * t)
+            
+            t_data = exp_df['Time'].values
+            x_data = exp_df['Biomass'].values
+            
+            popt, _ = curve_fit(fit_monod_growth, t_data[:5], x_data[:5], p0=[0.4, x_data[0]])
+            mu_fit = popt[0]
+            
+            # R-squared computation
+            residuals = x_data[:5] - fit_monod_growth(t_data[:5], *popt)
+            ss_res = np.sum(residuals**2)
+            ss_tot = np.sum((x_data[:5] - np.mean(x_data[:5]))**2)
+            r_squared = 1 - (ss_res / ss_tot)
+            
+            with col_x:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">Estimated Exponential μ_max</div>
+                    <div class="metric-value" style="color:var(--accent-emerald);">{mu_fit:.3f} h⁻¹</div>
+                    <div class="metric-sub">R² Fit Precision: {r_squared:.4f}</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                if st.button("⚡ Apply Fitted μ_max to Active Twin"):
+                    st.session_state['custom_mu'] = mu_fit
+                    st.rerun()
 
-        run_name = st.text_input("Run Label", value=f"Run #{len(st.session_state['run_history']) + 1}")
-        if st.button("Save Run Record", use_container_width=True):
-            record = {
-                "run_name": run_name,
-                "batch_time_hr": t_max,
-                "final_biomass": round(current_kpis["final_biomass"], 2),
-                "final_product": round(current_kpis["final_product"], 2),
-                "yield_p_s": round(current_kpis["yield_p_s"], 4),
-                "volumetric_prod": round(current_kpis["volumetric_prod"], 4),
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
-            }
-            st.session_state["run_history"].append(record)
-            save_run_to_supabase(record)
-            st.success(f"Saved '{run_name}'!")
-            st.rerun()
+        except Exception as e:
+            st.error(f"Error parsing uploaded file: {str(e)}")
 
-    with col_b2:
-        st.markdown("### Conversion & Yield Breakdown")
-        df_kpi_viz = pd.DataFrame({
-            "Metric": ["Substrate Consumed", "Biomass Produced", "Product Formed"],
-            "Amount (g/L)": [
-                current_kpis["consumed_substrate"], 
-                current_kpis["final_biomass"] - X0, 
-                current_kpis["final_product"] - P0
-            ]
-        })
-        fig_bar = px.bar(
-            df_kpi_viz, 
-            x="Metric", 
-            y="Amount (g/L)", 
-            color="Metric",
-            text_auto=".2f",
-            color_discrete_sequence=["#FF7043", "#66BB6A", "#42A5F5"]
-        )
-        fig_bar.update_layout(showlegend=False, height=350)
-        st.plotly_chart(fig_bar, use_container_width=True)
 
-# --- TAB 3: PARAMETER SENSITIVITY ---
-with tab3:
-    st.subheader("2D Volumetric Productivity Surface (μ_max vs S0)")
-    st.caption("Uses cached matrix calculations to ensure rapid interaction.")
-
-    prod_matrix, mu_vals, s0_vals = run_productivity_heatmap_sweep(
-        S0=S0, X0=X0, P0=P0, t_max=float(t_max), steps=100,
-        mu_max_range=(0.05, 1.2), S0_range=(10.0, 200.0),
-        Ks=Ks, Y_xs=Y_xs, Y_ps=Y_ps, alpha=alpha, beta=beta,
-        grid_size=15
-    )
-
-    fig_heatmap = go.Figure(data=go.Heatmap(
-        z=prod_matrix,
-        x=np.round(mu_vals, 2),
-        y=np.round(s0_vals, 1),
-        colorscale="Viridis",
-        colorbar=dict(title="Prod. (g/L/hr)")
+# ------------------------------------------
+# TAB 3: SENSITIVITY SWEEP
+# ------------------------------------------
+with tab_sensitivity:
+    st.markdown("### 🎯 Parameter Sensitivity Heatmap")
+    st.caption("Evaluate overall product yield across varying combinations of μ_max and Initial Substrate (S₀).")
+    
+    mu_range = np.linspace(0.1, 1.0, 8)
+    S0_range = np.linspace(10.0, 100.0, 8)
+    
+    matrix = np.zeros((len(S0_range), len(mu_range)))
+    
+    for i, s_val in enumerate(S0_range):
+        for j, m_val in enumerate(mu_range):
+            res, _ = run_simulation(X0, s_val, 0.0, m_val, Ks, Y_xs, Y_ps, alpha, beta, batch_time)
+            matrix[i, j] = res['Product P (g/L)'].iloc[-1] if not res.empty else 0
+            
+    fig_sens = go.Figure(data=go.Heatmap(
+        z=matrix, x=np.round(mu_range, 2), y=np.round(S0_range, 1),
+        colorscale='Viridis', colorbar=dict(title="Final Product (g/L)")
     ))
-    fig_heatmap.update_layout(
-        xaxis_title="Max Specific Growth Rate μ_max (1/hr)",
-        yaxis_title="Initial Substrate S0 (g/L)",
-        height=450
+    fig_sens.update_layout(
+        title="Product Yield Response Surface",
+        xaxis_title="μ_max (1/hr)",
+        yaxis_title="Initial Substrate S₀ (g/L)",
+        template="plotly_dark", height=450
     )
-    st.plotly_chart(fig_heatmap, use_container_width=True)
+    st.plotly_chart(fig_sens, use_container_width=True)
 
-# --- TAB 4: RUN HISTORY ---
-with tab4:
-    st.subheader("Historical Runs & Saved Benchmarks")
+
+# ------------------------------------------
+# TAB 4: EXECUTIVE REPORT EXPORT
+# ------------------------------------------
+with tab_report:
+    st.markdown("### 📄 Run Summary Export")
+    st.caption("Generate a clean, printable executive PDF/HTML report for compliance and lab records.")
     
-    if st.session_state["run_history"]:
-        df_history = pd.DataFrame(st.session_state["run_history"])
-        st.dataframe(
-            df_history, 
-            use_container_width=True,
-            column_config={
-                "yield_p_s": st.column_config.NumberColumn("Yield Y_P/S (g/g)", format="%.4f"),
-                "volumetric_prod": st.column_config.NumberColumn("Vol. Prod (g/L/hr)", format="%.4f")
-            }
-        )
+    report_title = st.text_input("Report Title", f"Bioprocess Run Summary - {preset_choice}")
+    engineer_name = st.text_input("Lead Process Engineer", "Dr. Alex Chen")
+    
+    report_html = f"""
+    <div style="background-color: white; color: black; padding: 30px; border-radius: 8px; font-family: Arial, sans-serif;">
+        <h2 style="color: #0F172A; margin-bottom: 5px;">{html.escape(report_title)}</h2>
+        <p style="color: #64748B; font-size: 0.9rem;">Generated on: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Author: {html.escape(engineer_name)}</p>
+        <hr style="border: 0.5px solid #CBD5E1;">
         
-        if st.button("Clear Local History"):
-            st.session_state["run_history"] = []
-            st.rerun()
-    else:
-        st.info("No saved runs in this session yet. Save a run in the 'Yield & Baseline Benchmarking' tab.")
+        <h3>1. Kinetic Parameters</h3>
+        <ul>
+            <li><b>Max Growth Rate (μ_max):</b> {mu_max} h⁻¹</li>
+            <li><b>Saturation Constant (Ks):</b> {Ks} g/L</li>
+            <li><b>Yield Biomass/Substrate (Y_x/s):</b> {Y_xs} g/g</li>
+            <li><b>Yield Product/Substrate (Y_p/s):</b> {Y_ps} g/g</li>
+        </ul>
+        
+        <h3>2. Run Performance Summary</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+            <tr style="background-color: #F1F5F9;">
+                <th style="padding: 8px; border: 1px solid #CBD5E1; text-align: left;">Metric</th>
+                <th style="padding: 8px; border: 1px solid #CBD5E1; text-align: left;">Value</th>
+            </tr>
+            <tr>
+                <td style="padding: 8px; border: 1px solid #CBD5E1;">Final Biomass (X)</td>
+                <td style="padding: 8px; border: 1px solid #CBD5E1;">{final_X:.2f} g/L</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px; border: 1px solid #CBD5E1;">Final Product (P)</td>
+                <td style="padding: 8px; border: 1px solid #CBD5E1;">{final_P:.2f} g/L</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px; border: 1px solid #CBD5E1;">Volumetric Productivity</td>
+                <td style="padding: 8px; border: 1px solid #CBD5E1;">{vol_prod:.3f} g/L/h</td>
+            </tr>
+        </table>
+    </div>
+    """
+    
+    st.components.v1.html(report_html, height=350, scrolling=True)
+    
+    st.download_button(
+        label="📥 Download Printable HTML Executive Report",
+        data=report_html,
+        file_name=f"Bioprocess_Report_{datetime.date.today()}.html",
+        mime="text/html"
+    )
