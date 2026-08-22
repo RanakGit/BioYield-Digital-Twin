@@ -97,7 +97,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ==========================================
+## ==========================================
 # 2. AUTHENTICATION & DATABASE SYSTEM
 # ==========================================
 def init_user_db():
@@ -112,6 +112,12 @@ def init_user_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    # Auto-seed a permanent demo account so you never get locked out
+    cursor.execute("SELECT id FROM users WHERE username = ?", ("demo",))
+    if not cursor.fetchone():
+        hashed_demo = hashlib.sha256("demo123".encode('utf-8')).hexdigest()
+        cursor.execute("INSERT OR IGNORE INTO users (username, facility, password_hash) VALUES (?, ?, ?)",
+                       ("demo", "FermentIQ Enterprise Lab", hashed_demo))
     conn.commit()
     conn.close()
 
@@ -144,8 +150,8 @@ def authenticate_user(username: str, password: str) -> tuple[bool, str, str]:
         facility, stored_hash = row
         if stored_hash == hash_password(password):
             return True, facility, "Login successful!"
-        return False, "", "Incorrect password."
-    return False, "", "Username not found. Please Sign Up first."
+        return False, "", "Incorrect password. (Hint: Try demo / demo123)"
+    return False, "", "Username not found. Please Sign Up or use demo account."
 
 init_user_db()
 
@@ -160,12 +166,15 @@ if not st.session_state['authenticated']:
     st.markdown("## 🧬 Welcome to FermentIQ")
     st.caption("Next-Generation Bioprocess Digital Twin, EKF Telemetry & Simulation Platform")
     
+    # Quick Demo Callout Box
+    st.info("💡 **Instant Access Demo:** You can log in right now using Username: `demo` and Password: `demo123`")
+
     auth_tab1, auth_tab2 = st.tabs(["🔒 Log In", "📝 Sign Up (New Account)"])
     
     with auth_tab1:
         with st.form("login_form"):
-            login_user = st.text_input("Username or Email")
-            login_pass = st.text_input("Password", type="password")
+            login_user = st.text_input("Username or Email", value="demo")
+            login_pass = st.text_input("Password", type="password", value="demo123")
             login_btn = st.form_submit_button("Log In", use_container_width=True)
             if login_btn:
                 success, facility, msg = authenticate_user(login_user, login_pass)
@@ -194,35 +203,6 @@ if not st.session_state['authenticated']:
                     created, msg = register_user(new_user, new_facility, new_pass)
                     if created: st.success(msg)
                     else: st.error(msg)
-    st.stop()
-
-# --- PROFESSIONAL ONBOARDING FLOW ---
-if st.session_state['authenticated'] and not st.session_state['onboarded']:
-    st.markdown("## 🚀 Welcome to FermentIQ — Let's Setup Your Profile")
-    st.caption("Tell us a bit about yourself so we can customize your simulation experience.")
-    
-    with st.form("onboarding_form"):
-        user_role = st.selectbox(
-            "What best describes your current role?",
-            ["Student / Undergraduate", "Academic Researcher / Professor", "Industrial Bioprocess Engineer", "Startup Founder / R&D Scientist", "Other"]
-        )
-        primary_goal = st.selectbox(
-            "What is your primary objective with FermentIQ?",
-            ["Learning bioprocess kinetics and math modeling", "Simulating and optimizing fed-batch strategies", "Fitting lab data and parameter estimation", "Generating compliance audit reports"]
-        )
-        experience_level = st.select_slider(
-            "Your familiarity with Bioprocess Engineering & Fermentation:",
-            options=["Beginner", "Intermediate", "Advanced / Expert"]
-        )
-        
-        onboard_btn = st.form_submit_button("Enter FermentIQ Workspace 🚀", use_container_width=True)
-        if onboard_btn:
-            st.session_state['user_role'] = user_role
-            st.session_state['primary_goal'] = primary_goal
-            st.session_state['experience_level'] = experience_level
-            st.session_state['onboarded'] = True
-            st.success("Configuration saved! Launching dashboard...")
-            st.rerun()
     st.stop()
 
 # ==========================================
