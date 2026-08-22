@@ -109,39 +109,119 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+import sqlite3
+import hashlib
+
 # ==========================================
-# 2. AUTHENTICATION & MULTI-TENANCY GATE
+# 2. AUTHENTICATION & DATABASE SIGN-UP GATE
 # ==========================================
+
+# Initialize SQLite user database
+def init_user_db():
+    conn = sqlite3.connect("biotwin_users.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            facility TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+
+def register_user(username: str, facility: str, password: str) -> tuple[bool, str]:
+    if not username.strip() or not password.strip():
+        return False, "Username and password cannot be empty."
+    
+    conn = sqlite3.connect("biotwin_users.db")
+    cursor = conn.cursor()
+    try:
+        hashed = hash_password(password)
+        cursor.execute(
+            "INSERT INTO users (username, facility, password_hash) VALUES (?, ?, ?)",
+            (username.strip().lower(), facility.strip(), hashed)
+        )
+        conn.commit()
+        conn.close()
+        return True, "Account created successfully! You can now log in."
+    except sqlite3.IntegrityError:
+        conn.close()
+        return False, "Username already exists. Please choose another or Log In."
+
+def authenticate_user(username: str, password: str) -> tuple[bool, str, str]:
+    conn = sqlite3.connect("biotwin_users.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT facility, password_hash FROM users WHERE username = ?", (username.strip().lower(),))
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        facility, stored_hash = row
+        if stored_hash == hash_password(password):
+            return True, facility, "Login successful!"
+        return False, "", "Incorrect password."
+    return False, "", "Username not found. Please Sign Up first."
+
+# Initialize DB on load
+init_user_db()
+
+# State Management
 if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
 
 if not st.session_state['authenticated']:
-    st.markdown("## 🧬 BioTwin Pro Enterprise Login")
-    
-    col_a, col_b = st.columns([1, 2])
-    with col_a:
-        # Using a form prevents Streamlit from refreshing mid-typing
+    st.markdown("## 🧬 Welcome to BioTwin Pro")
+    st.caption("Access the Enterprise Bioprocess Digital Twin & Simulation Platform")
+
+    # Tabbed Interface for Log In vs Sign Up
+    auth_tab1, auth_tab2 = st.tabs(["🔒 Log In", "📝 Sign Up (New Account)"])
+
+    # --- LOG IN TAB ---
+    with auth_tab1:
         with st.form("login_form"):
-            tenant_key = st.text_input("Enterprise License Key / API Token", type="password")
-            organization = st.text_input("Organization / Facility ID", "BioProcess Corp Alpha")
-            submit_button = st.form_submit_button("Authenticate Workspace", use_container_width=True)
-            
-            if submit_button:
-                # .strip() removes any accidental trailing/leading spaces
-                clean_key = tenant_key.strip()
-                
-                VALID_KEYS = ["demo", "biotwin_enterprise_secret_key", "admin"]
-                
-                if clean_key in VALID_KEYS:
+            login_user = st.text_input("Username or Email")
+            login_pass = st.text_input("Password", type="password")
+            login_btn = st.form_submit_button("Log In", use_container_width=True)
+
+            if login_btn:
+                success, facility, msg = authenticate_user(login_user, login_pass)
+                if success:
                     st.session_state['authenticated'] = True
-                    st.session_state['org'] = organization.strip()
-                    st.success("Authorized! Loading Digital Twin Workspace...")
+                    st.session_state['username'] = login_user.strip().lower()
+                    st.session_state['org'] = facility
+                    st.success(f"Welcome back, {login_user}! Redirecting...")
                     st.rerun()
                 else:
-                    st.error("Invalid Enterprise Token. Try 'demo' or 'admin'.")
-                    
-    st.stop()
+                    st.error(msg)
 
+    # --- SIGN UP TAB ---
+    with auth_tab2:
+        with st.form("signup_form"):
+            new_user = st.text_input("Choose Username / Email")
+            new_facility = st.text_input("Facility / Organization Name", "BioProcess Corp")
+            new_pass = st.text_input("Create Password", type="password")
+            confirm_pass = st.text_input("Confirm Password", type="password")
+            signup_btn = st.form_submit_button("Create Account & Sign Up", use_container_width=True)
+
+            if signup_btn:
+                if new_pass != confirm_pass:
+                    st.error("Passwords do not match!")
+                elif len(new_pass) < 4:
+                    st.error("Password must be at least 4 characters long.")
+                else:
+                    created, msg = register_user(new_user, new_facility, new_pass)
+                    if created:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
+
+    st.stop()
 # ==========================================
 # 3. ADVANCED NUMERICAL COMPUTATION ENGINE
 # ==========================================
