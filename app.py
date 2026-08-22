@@ -4,7 +4,6 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from scipy.integrate import odeint
-from scipy.optimize import curve_fit
 import datetime
 import io
 import sqlite3
@@ -12,6 +11,7 @@ import hashlib
 import hmac
 import secrets
 import math
+import os
 
 # ==========================================
 # 1. ENTERPRISE UI/UX DESIGN SYSTEM (CSS)
@@ -47,14 +47,24 @@ st.markdown("""
         }
     }
 
-    html, body {
+    html, body, [data-testid="stAppViewContainer"] {
         font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        background-color: var(--bg-main);
+        color: var(--text-main);
     }
 
     .block-container {
         padding-top: 2rem;
         padding-bottom: 3rem;
         max-width: 1400px;
+    }
+
+    /* Robust Input & Component Styling for Light/Dark Modes */
+    .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
+        background-color: var(--card-bg) !important;
+        color: var(--text-main) !important;
+        border-color: var(--border-color) !important;
+        border-radius: 8px !important;
     }
 
     .brand-header {
@@ -109,12 +119,6 @@ st.markdown("""
         border-radius: 12px;
         padding: 1.25rem 1.5rem;
         box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-
-    .kpi-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
     }
 
     .kpi-label {
@@ -179,10 +183,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. AUTHENTICATION & SELF-HEALING DATABASE
+# 2. PERSISTENT AUTHENTICATION & DATABASE
 # ==========================================
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fermentiq_users.db")
+
 def get_db_connection():
-    return sqlite3.connect("fermentiq_users.db")
+    return sqlite3.connect(DB_PATH)
 
 def init_user_db():
     try:
@@ -211,8 +217,8 @@ def init_user_db():
                            ("demo", "FermentIQ Enterprise Lab", pwd_hash, salt))
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"DB Init Error: {e}")
 
 def hash_password(password: str, salt: str = None) -> tuple[str, str]:
     if salt is None:
@@ -221,28 +227,29 @@ def hash_password(password: str, salt: str = None) -> tuple[str, str]:
     return pwd_hash, salt
 
 def register_user(username: str, facility: str, password: str) -> tuple[bool, str]:
-    if not username.strip() or not password.strip():
+    clean_user = username.strip().lower()
+    if not clean_user or not password.strip():
         return False, "Username and password cannot be empty."
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         pwd_hash, salt = hash_password(password)
         cursor.execute("INSERT INTO users (username, facility, password_hash, salt) VALUES (?, ?, ?, ?)",
-                       (username.strip().lower(), facility.strip(), pwd_hash, salt))
+                       (clean_user, facility.strip(), pwd_hash, salt))
         conn.commit()
         conn.close()
-        return True, "Account created successfully! Switch to Log In."
-    except sqlite3.OperationalError:
-        init_user_db()
-        return register_user(username, facility, password)
+        return True, "Account created successfully! You can now log in."
     except sqlite3.IntegrityError:
-        return False, "Username already exists."
+        return False, "Username or email already exists."
+    except Exception as e:
+        return False, f"Registration error: {e}"
 
 def authenticate_user(username: str, password: str) -> tuple[bool, str, str]:
+    clean_user = username.strip().lower()
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT facility, password_hash, salt FROM users WHERE username = ?", (username.strip().lower(),))
+        cursor.execute("SELECT facility, password_hash, salt FROM users WHERE username = ?", (clean_user,))
         row = cursor.fetchone()
         conn.close()
         if row:
@@ -251,11 +258,9 @@ def authenticate_user(username: str, password: str) -> tuple[bool, str, str]:
             if hmac.compare_digest(pwd_hash, stored_hash):
                 return True, facility, "Login successful!"
             return False, "", "Incorrect password."
-        return False, "", "Username not found."
-    except sqlite3.OperationalError:
-        # Self-healing fallback if table or schema is out of sync
-        init_user_db()
-        return authenticate_user(username, password)
+        return False, "", "Username or email not found."
+    except Exception as e:
+        return False, "", f"Authentication error: {e}"
 
 init_user_db()
 
@@ -273,18 +278,13 @@ if not st.session_state['authenticated']:
         auth_tab1, auth_tab2 = st.tabs(["🔒 Secure Log In", "📝 Create Account"])
         
         with auth_tab1:
-            with st.form("login_form"):
-                login_user = st.text_input("Username or Email", value="")
-                login_pass = st.text_input("Password", type="password", value="")
-                st.caption("💡 Tip: Use username `demo` and password `demo123` or click **Continue as Guest** below.")
-                st.markdown("<br>", unsafe_allow_html=True)
-                c_login, c_guest = st.columns(2)
-                with c_login:
-                    login_btn = st.form_submit_button("Access Workspace ➔", use_container_width=True)
-                with c_guest:
-                    guest_btn = st.form_submit_button("Continue as Guest", use_container_width=True)
-                
-                if login_btn:
+            login_user = st.text_input("Username or Email", key="login_user_input")
+            login_pass = st.text_input("Password", type="password", key="login_pass_input")
+            st.caption("💡 Tip: Use username `demo` and password `demo123` or click **Continue as Guest**.")
+            st.markdown("<br>", unsafe_allow_html=True)
+            c_login, c_guest = st.columns(2)
+            with c_login:
+                if st.button("Access Workspace ➔", use_container_width=True):
                     success, facility, msg = authenticate_user(login_user, login_pass)
                     if success:
                         st.session_state['authenticated'] = True
@@ -293,29 +293,32 @@ if not st.session_state['authenticated']:
                         st.rerun()
                     else:
                         st.error(msg)
-                elif guest_btn:
+            with c_guest:
+                if st.button("Continue as Guest", use_container_width=True):
                     st.session_state['authenticated'] = True
                     st.session_state['username'] = "guest_operator"
                     st.session_state['org'] = "Guest Facility"
                     st.rerun()
                         
         with auth_tab2:
-            with st.form("signup_form"):
-                new_user = st.text_input("Choose Username / Email")
-                new_facility = st.text_input("Facility Name", "BioProcess Corp")
-                new_pass = st.text_input("Create Password", type="password")
-                confirm_pass = st.text_input("Confirm Password", type="password")
-                st.markdown("<br>", unsafe_allow_html=True)
-                signup_btn = st.form_submit_button("Register Enterprise Account", use_container_width=True)
-                if signup_btn:
-                    if new_pass != confirm_pass:
-                        st.error("Passwords do not match!")
-                    elif len(new_pass) < 4:
-                        st.error("Password must be at least 4 characters.")
-                    else:
-                        created, msg = register_user(new_user, new_facility, new_pass)
-                        if created: st.success(msg)
-                        else: st.error(msg)
+            new_user = st.text_input("Choose Username or Email", key="signup_user_input")
+            new_facility = st.text_input("Facility Name", "BioProcess Corp", key="signup_facility_input")
+            new_pass = st.text_input("Create Password", type="password", key="signup_pass_input")
+            confirm_pass = st.text_input("Confirm Password", type="password", key="signup_confirm_input")
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("Register Enterprise Account", use_container_width=True):
+                if not new_user or not new_pass:
+                    st.error("Please fill in all required fields.")
+                elif new_pass != confirm_pass:
+                    st.error("Passwords do not match!")
+                elif len(new_pass) < 4:
+                    st.error("Password must be at least 4 characters.")
+                else:
+                    created, msg = register_user(new_user, new_facility, new_pass)
+                    if created: 
+                        st.success(msg)
+                    else: 
+                        st.error(msg)
     st.stop()
 
 if st.session_state['authenticated'] and not st.session_state['onboarded']:
@@ -323,17 +326,16 @@ if st.session_state['authenticated'] and not st.session_state['onboarded']:
     with col2:
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.markdown("### 🚀 Setup Your FermentIQ Session")
-        with st.form("onboarding_form"):
-            user_role = st.selectbox("Role", ["Student", "Academic Researcher", "Industrial Bioprocess Engineer", "R&D Scientist"])
-            primary_goal = st.selectbox("Objective", ["Kinetics & Stoichiometry Training", "Fed-Batch Optimization", "Parameter Fitting", "Audit Compliance"])
-            experience_level = st.select_slider("Expertise", options=["Beginner", "Intermediate", "Expert"])
-            st.markdown("<br>", unsafe_allow_html=True)
-            if st.form_submit_button("Launch Dashboard ➔", use_container_width=True):
-                st.session_state['user_role'] = user_role
-                st.session_state['primary_goal'] = primary_goal
-                st.session_state['experience_level'] = experience_level
-                st.session_state['onboarded'] = True
-                st.rerun()
+        user_role = st.selectbox("Role", ["Student", "Academic Researcher", "Industrial Bioprocess Engineer", "R&D Scientist"])
+        primary_goal = st.selectbox("Objective", ["Kinetics & Stoichiometry Training", "Fed-Batch Optimization", "Parameter Fitting", "Audit Compliance"])
+        experience_level = st.select_slider("Expertise", options=["Beginner", "Intermediate", "Expert"])
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("Launch Dashboard ➔", use_container_width=True):
+            st.session_state['user_role'] = user_role
+            st.session_state['primary_goal'] = primary_goal
+            st.session_state['experience_level'] = experience_level
+            st.session_state['onboarded'] = True
+            st.rerun()
     st.stop()
 
 # ==========================================
@@ -407,7 +409,7 @@ def run_fermentiq_simulation(X0, S0, P0, A0, DO0, V0, mu_max, Ks, Ki, Y_xs, Y_ps
             'Dissolved Oxygen DO (mg/L)': np.clip(sol[:, 4], 0, None),
             'Reactor Volume V (L)': sol[:, 5]
         }), True
-    except Exception as e:
+    except Exception:
         return pd.DataFrame(), False
 
 def run_extended_kalman_filter(time_pts, noisy_biomass, mu_max, Ks, Y_xs, F0_val, V_init):
@@ -487,15 +489,6 @@ with st.sidebar:
         if 'custom_strain_input' not in st.session_state:
             st.session_state['custom_strain_input'] = "E. coli BL21(DE3)"
             
-        st.caption("Quick Suggestions:")
-        sug_col1, sug_col2 = st.columns(2)
-        with sug_col1:
-            if st.button("E. coli BL21", use_container_width=True): st.session_state['custom_strain_input'] = "E. coli BL21(DE3)"
-            if st.button("CHO-K1", use_container_width=True): st.session_state['custom_strain_input'] = "CHO-K1 Suspension"
-        with sug_col2:
-            if st.button("S. cerevisiae", use_container_width=True): st.session_state['custom_strain_input'] = "Saccharomyces cerevisiae BY4741"
-            if st.button("P. pastoris", use_container_width=True): st.session_state['custom_strain_input'] = "Pichia pastoris Mut+"
-
         custom_strain_name = st.text_input("Strain Name", key='custom_strain_input')
         custom_strain_id = st.text_input("Batch ID", "LOT-2026-B01")
         preset_choice = f"{custom_strain_name} ({custom_strain_id})"
@@ -569,7 +562,7 @@ st.markdown(f"""
 <div class="brand-header">
     <div class="brand-title">
         <span>🧬 FermentIQ</span>
-        <span class="brand-badge">Enterprise v4.1</span>
+        <span class="brand-badge">Enterprise v4.2</span>
     </div>
     <div class="brand-subtitle">
         Operator: <b style="color: var(--text-main);">{st.session_state.get('username', 'Operator')}</b> | Strain: <b style="color: var(--text-main);">{preset_choice}</b> | Mode: <b style="color: var(--text-main);">{feed_policy}</b>
@@ -806,7 +799,7 @@ with tab_report:
         </div>
 
         <div style="font-size:11px; color:#94A3B8; text-align:center; border-top:1px solid #E2E8F0; padding-top:12px;">
-            FermentIQ v4.1 Engine • Bioprocess Simulation & Analytics Suite
+            FermentIQ v4.2 Engine • Bioprocess Simulation & Analytics Suite
         </div>
     </div>
     """
